@@ -76,7 +76,8 @@
               "api/parse",
               "api/transform",
               "api/validate",
-              "api/render"
+              "api/render",
+              "api/utilities"
             ]
           },
           {

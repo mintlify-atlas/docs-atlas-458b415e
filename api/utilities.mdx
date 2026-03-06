@@ -1,0 +1,386 @@
+---
+title: Utility Functions
+description: Additional utility functions and helpers exported by Markdoc
+---
+
+# Utility Functions
+
+Markdoc exports several utility functions and objects that provide additional functionality for advanced use cases.
+
+## resolve()
+
+Resolves variables and expressions in the AST before transformation.
+
+**Signature**
+
+```typescript
+function resolve<C extends Config = Config>(
+  content: Node | Node[],
+  config: C
+): Node | Node[]
+```
+
+<ParamField path="content" type="Node | Node[]" required>
+  The AST node or array of nodes to resolve
+</ParamField>
+
+<ParamField path="config" type="Config" required>
+  Configuration object containing variables, partials, and other settings
+</ParamField>
+
+**Returns**
+
+`Node | Node[]` - The resolved AST with variables and expressions evaluated
+
+**Description**
+
+The `resolve()` function is called internally by `transform()` to evaluate variables, functions, and expressions in the AST before transforming it to a renderable tree. You typically don't need to call this directly unless you're implementing custom transformation logic.
+
+**Example**
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `# Hello {% $name %}`;
+const ast = Markdoc.parse(doc);
+
+const config = {
+  variables: {
+    name: 'World'
+  }
+};
+
+// Resolve variables in the AST
+const resolved = Markdoc.resolve(ast, config);
+
+// Then transform
+const content = resolved.transform(config);
+```
+
+---
+
+## createElement()
+
+Creates a renderable tree node (Tag) object.
+
+**Signature**
+
+```typescript
+function createElement(
+  name: string | { key?: string | number },
+  attributes?: Record<string, any>,
+  ...children: any[]
+): { name: any; attributes: any; children: any[] }
+```
+
+<ParamField path="name" type="string | { key?: string | number }" required>
+  The tag name or component identifier
+</ParamField>
+
+<ParamField path="attributes" type="Record<string, any>">
+  Attributes to pass to the tag
+</ParamField>
+
+<ParamField path="children" type="any[]">
+  Child elements
+</ParamField>
+
+**Returns**
+
+An object with `name`, `attributes`, and `children` properties
+
+**Description**
+
+This utility creates Tag objects that can be used in custom transform functions. It provides a convenient way to construct renderable tree nodes programmatically.
+
+**Example**
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const customTag = {
+  render: 'CustomComponent',
+  transform(node, config) {
+    // Create a custom structure
+    return Markdoc.createElement(
+      'CustomComponent',
+      { id: node.attributes.id },
+      Markdoc.createElement('span', {}, 'Child content')
+    );
+  }
+};
+```
+
+---
+
+## format()
+
+Formats a Markdoc AST back into Markdoc syntax.
+
+**Signature**
+
+```typescript
+function format(node: Node): string
+```
+
+<ParamField path="node" type="Node" required>
+  The AST node to format
+</ParamField>
+
+**Returns**
+
+`string` - The formatted Markdoc syntax
+
+**Description**
+
+The `format()` function converts a Markdoc AST back into Markdoc syntax. This is useful for:
+- Pretty-printing Markdoc content
+- Normalizing formatting
+- Building Markdoc editors or formatters
+- Round-trip conversion (parse → format)
+
+**Example**
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Heading
+
+Some **bold** text.
+
+{% callout type="note" %}
+Important!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const formatted = Markdoc.format(ast);
+
+console.log(formatted);
+// Outputs normalized Markdoc syntax
+```
+
+---
+
+## parseTags()
+
+Parses Markdoc tag syntax from a string and returns markdown-it tokens.
+
+**Signature**
+
+```typescript
+function parseTags(content: string, firstLine?: number): Token[]
+```
+
+<ParamField path="content" type="string" required>
+  The content string containing Markdoc tags
+</ParamField>
+
+<ParamField path="firstLine" type="number">
+  The starting line number for location tracking (default: 0)
+</ParamField>
+
+**Returns**
+
+`Token[]` - Array of markdown-it tokens representing the tags
+
+**Description**
+
+This low-level utility parses Markdoc tag syntax (`{% tag %}`) from a string and converts it to markdown-it tokens. It's used internally by the parser but can be useful for:
+- Building custom parsers
+- Extracting tags from content
+- Syntax highlighting
+- Linting tools
+
+**Example**
+
+```typescript
+import { parseTags } from '@markdoc/markdoc';
+
+const content = `
+Text before
+{% callout type="note" %}
+Content
+{% /callout %}
+Text after
+`;
+
+const tokens = parseTags(content);
+console.log(tokens);
+// Array of Token objects for the tags
+```
+
+---
+
+## truthy()
+
+Evaluates whether a value is truthy according to Markdoc's conditional logic.
+
+**Signature**
+
+```typescript
+function truthy(value: any): boolean
+```
+
+<ParamField path="value" type="any" required>
+  The value to evaluate
+</ParamField>
+
+**Returns**
+
+`boolean` - `true` if the value is truthy, `false` otherwise
+
+**Description**
+
+The `truthy()` function implements Markdoc's truthiness rules used by the `{% if %}` tag and logical functions. A value is truthy unless it is:
+- `false`
+- `null`
+- `undefined`
+
+Note that unlike JavaScript, `0`, empty strings (`""`), and empty arrays (`[]`) are considered truthy in Markdoc.
+
+**Example**
+
+```typescript
+import { truthy } from '@markdoc/markdoc';
+
+truthy(true);        // true
+truthy(false);       // false
+truthy(null);        // false
+truthy(undefined);   // false
+truthy(0);           // true (different from JS)
+truthy("");          // true (different from JS)
+truthy([]);          // true (different from JS)
+truthy({});          // true
+```
+
+---
+
+## globalAttributes
+
+An object containing schema definitions for global attributes that can be used on any node.
+
+**Type**
+
+```typescript
+const globalAttributes: Record<string, SchemaAttribute>
+```
+
+**Description**
+
+Global attributes are attributes that can be applied to any Markdoc node. Currently includes:
+- `id` - Adds an ID attribute for linking
+- `class` - Adds CSS classes
+
+**Example**
+
+```typescript
+import { globalAttributes } from '@markdoc/markdoc';
+
+console.log(globalAttributes);
+// { id: { type: String, ... }, class: { type: String, ... } }
+
+// Use in custom schemas
+const customNode = {
+  render: 'div',
+  attributes: {
+    ...globalAttributes,
+    customAttr: { type: String }
+  }
+};
+```
+
+---
+
+## transformer
+
+The transformer object contains methods for transforming AST nodes to renderable trees.
+
+**Type**
+
+```typescript
+const transformer: {
+  findSchema(node: Node, config: Config): Schema | undefined;
+  node(node: Node, config: Config): RenderableTreeNodes;
+  attributes(node: Node, config: Config): Record<string, any>;
+  children(node: Node, config: Config): RenderableTreeNode[];
+}
+```
+
+**Description**
+
+The `transformer` object provides low-level transformation functions. These are used internally by the `transform()` function but can be useful for:
+- Building custom transformation pipelines
+- Implementing partial transformations
+- Debugging transformation issues
+
+---
+
+## transforms
+
+An object containing built-in AST transformation functions.
+
+**Type**
+
+```typescript
+const transforms: Record<string, (node: Node) => Node | Node[]>
+```
+
+**Description**
+
+The `transforms` object contains functions that normalize and transform the AST during parsing. These are applied automatically but can be referenced for custom transformation logic.
+
+---
+
+## validator
+
+The validator object provides validation functionality.
+
+**Type**
+
+```typescript
+const validator: {
+  (node: Node, config: Config): ValidateError[];
+}
+```
+
+**Description**
+
+The `validator` function validates a single node against a schema. Use `validate()` instead for validating entire documents.
+
+---
+
+## validateTree()
+
+Validates an entire AST tree against schemas.
+
+**Signature**
+
+```typescript
+function validateTree(content: Node | Node[], config: Config): ValidateError[]
+```
+
+<ParamField path="content" type="Node | Node[]" required>
+  The AST node or array of nodes to validate
+</ParamField>
+
+<ParamField path="config" type="Config" required>
+  Configuration object with schemas
+</ParamField>
+
+**Returns**
+
+`ValidateError[]` - Array of validation errors
+
+**Description**
+
+This function walks the entire AST tree and validates each node. It's called internally by `validate()`. Use the higher-level `validate()` function in most cases.
+
+---
+
+## Related APIs
+
+- [parse()](/api/parse) - Parse Markdown to AST
+- [transform()](/api/transform) - Transform AST to renderable tree
+- [validate()](/api/validate) - Validate AST against schemas
