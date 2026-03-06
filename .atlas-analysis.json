@@ -1,0 +1,137 @@
+{
+  "projectType": "framework",
+  "projectName": "Markdoc",
+  "projectDescription": "A powerful, flexible, Markdown-based authoring framework for creating custom documentation sites and experiences.",
+  "theme": "willow",
+  "primaryColor": "#e2d393",
+  "lightColor": "#646467",
+  "darkColor": "#212124",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/syntax",
+              "concepts/schema",
+              "concepts/nodes",
+              "concepts/tags"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/custom-tags",
+              "guides/custom-nodes",
+              "guides/custom-functions",
+              "guides/renderers",
+              "guides/validation",
+              "guides/react-integration"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/typescript",
+              "advanced/error-handling",
+              "advanced/performance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/parse",
+              "api/transform",
+              "api/validate",
+              "api/render"
+            ]
+          },
+          {
+            "group": "Built-in Tags",
+            "pages": [
+              "api/tags/conditional",
+              "api/tags/partial",
+              "api/tags/slot",
+              "api/tags/table"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "pages": [
+              "api/nodes/overview",
+              "api/nodes/markdown-nodes",
+              "api/nodes/custom-nodes"
+            ]
+          },
+          {
+            "group": "Functions",
+            "pages": [
+              "api/functions/overview",
+              "api/functions/built-in"
+            ]
+          },
+          {
+            "group": "Renderers",
+            "pages": [
+              "api/renderers/react",
+              "api/renderers/html"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/config",
+              "api/types/schema",
+              "api/types/node",
+              "api/types/tag"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Markdown-based syntax with custom tag extensions",
+    "Schema-driven validation system",
+    "Parse-transform-render pipeline",
+    "Custom nodes, tags, and functions",
+    "React and HTML renderers",
+    "Built-in conditional rendering and partials",
+    "TypeScript support with full type definitions",
+    "AST manipulation and transformation"
+  ],
+  "publicApiSurface": [
+    "Markdoc.parse()",
+    "Markdoc.transform()",
+    "Markdoc.validate()",
+    "Markdoc.renderers.react()",
+    "Markdoc.renderers.html()",
+    "nodes",
+    "tags",
+    "functions",
+    "Ast",
+    "Node",
+    "Tag",
+    "Tokenizer",
+    "Config",
+    "Schema",
+    "ValidationError",
+    "RenderableTreeNode"
+  ]
+}
