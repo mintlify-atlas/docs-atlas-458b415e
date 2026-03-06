@@ -1,0 +1,624 @@
+---
+title: Built-in Markdown nodes
+description: Reference for all built-in node types that Markdoc uses to represent standard Markdown elements
+---
+
+# Built-in Markdown nodes
+
+Markdoc includes schemas for all standard Markdown elements. Each schema defines how a node is rendered and what attributes it accepts.
+
+## Block-level nodes
+
+### document
+
+The root node of every Markdoc document.
+
+**Schema:**
+```ts
+{
+  render: 'article',
+  children: ['heading', 'paragraph', 'image', 'table', 'tag', 'fence', 'blockquote', 'comment', 'list', 'hr'],
+  attributes: {
+    frontmatter: { render: false }
+  }
+}
+```
+
+**Attributes:**
+- `frontmatter` - YAML frontmatter content (not rendered)
+
+---
+
+### heading
+
+Represents headings from h1 to h6.
+
+**Schema:**
+```ts
+{
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true }
+  },
+  transform(node, config) {
+    return new Tag(
+      `h${node.attributes['level']}`,
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  }
+}
+```
+
+**Attributes:**
+- `level` (required) - Heading level (1-6)
+
+**Markdown:**
+```markdown
+# Heading 1
+## Heading 2
+### Heading 3
+```
+
+**Renders as:** `<h1>`, `<h2>`, `<h3>`, etc.
+
+---
+
+### paragraph
+
+Standard text paragraphs.
+
+**Schema:**
+```ts
+{
+  render: 'p',
+  children: ['inline']
+}
+```
+
+**Markdown:**
+```markdown
+This is a paragraph.
+```
+
+**Renders as:** `<p>`
+
+---
+
+### blockquote
+
+Block quotations.
+
+**Schema:**
+```ts
+{
+  render: 'blockquote',
+  children: ['heading', 'paragraph', 'image', 'table', 'tag', 'fence', 'blockquote', 'list', 'hr']
+}
+```
+
+**Markdown:**
+```markdown
+> This is a quote.
+> It can span multiple lines.
+```
+
+**Renders as:** `<blockquote>`
+
+---
+
+### list
+
+Ordered and unordered lists.
+
+**Schema:**
+```ts
+{
+  children: ['item'],
+  attributes: {
+    ordered: { type: Boolean, render: false, required: true },
+    start: { type: Number },
+    marker: { type: String, render: false }
+  },
+  transform(node, config) {
+    return new Tag(
+      node.attributes.ordered ? 'ol' : 'ul',
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  }
+}
+```
+
+**Attributes:**
+- `ordered` (required) - Whether it's an ordered list
+- `start` - Starting number for ordered lists
+- `marker` - List marker character (not rendered)
+
+**Markdown:**
+```markdown
+- Unordered item
+- Another item
+
+1. Ordered item
+2. Another item
+```
+
+**Renders as:** `<ul>` or `<ol>`
+
+---
+
+### item
+
+List item element.
+
+**Schema:**
+```ts
+{
+  render: 'li',
+  children: ['inline', 'heading', 'paragraph', 'image', 'table', 'tag', 'fence', 'blockquote', 'list', 'hr']
+}
+```
+
+**Renders as:** `<li>`
+
+---
+
+### fence
+
+Fenced code blocks.
+
+**Schema:**
+```ts
+{
+  render: 'pre',
+  attributes: {
+    content: { type: String, render: false, required: true },
+    language: { type: String, render: 'data-language' },
+    process: { type: Boolean, render: false, default: true }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.children.length
+      ? node.transformChildren(config)
+      : [node.attributes.content];
+    return new Tag('pre', attributes, children);
+  }
+}
+```
+
+**Attributes:**
+- `content` (required) - Code content (not rendered as attribute)
+- `language` - Programming language
+- `process` - Whether to process tags in code block (default: `true`)
+
+**Markdown:**
+````markdown
+```javascript
+const x = 42;
+```
+````
+
+**Renders as:** `<pre data-language="javascript">`
+
+---
+
+### hr
+
+Horizontal rule.
+
+**Schema:**
+```ts
+{
+  render: 'hr'
+}
+```
+
+**Markdown:**
+```markdown
+---
+```
+
+**Renders as:** `<hr>`
+
+---
+
+## Table nodes
+
+### table
+
+**Schema:**
+```ts
+{
+  render: 'table'
+}
+```
+
+**Renders as:** `<table>`
+
+---
+
+### thead
+
+**Schema:**
+```ts
+{
+  render: 'thead',
+  children: ['tr']
+}
+```
+
+**Renders as:** `<thead>`
+
+---
+
+### tbody
+
+**Schema:**
+```ts
+{
+  render: 'tbody',
+  children: ['tr', 'tag']
+}
+```
+
+**Renders as:** `<tbody>`
+
+---
+
+### tr
+
+**Schema:**
+```ts
+{
+  render: 'tr',
+  children: ['th', 'td']
+}
+```
+
+**Renders as:** `<tr>`
+
+---
+
+### th
+
+Table header cell.
+
+**Schema:**
+```ts
+{
+  render: 'th',
+  attributes: {
+    width: { type: String },
+    align: { type: String },
+    colspan: { type: Number, render: 'colSpan' },
+    rowspan: { type: Number, render: 'rowSpan' }
+  }
+}
+```
+
+**Attributes:**
+- `width` - Column width
+- `align` - Text alignment
+- `colspan` - Column span
+- `rowspan` - Row span
+
+**Renders as:** `<th>`
+
+---
+
+### td
+
+Table data cell.
+
+**Schema:**
+```ts
+{
+  render: 'td',
+  children: ['inline', 'heading', 'paragraph', 'image', 'table', 'tag', 'fence', 'blockquote', 'list', 'hr'],
+  attributes: {
+    align: { type: String },
+    colspan: { type: Number, render: 'colSpan' },
+    rowspan: { type: Number, render: 'rowSpan' }
+  }
+}
+```
+
+**Attributes:**
+- `align` - Text alignment
+- `colspan` - Column span
+- `rowspan` - Row span
+
+**Renders as:** `<td>`
+
+---
+
+## Inline nodes
+
+### inline
+
+Container for inline content. Not rendered itself; only its children are rendered.
+
+**Schema:**
+```ts
+{
+  children: ['strong', 'em', 's', 'code', 'text', 'tag', 'link', 'image', 'hardbreak', 'softbreak', 'comment']
+}
+```
+
+---
+
+### text
+
+Plain text content.
+
+**Schema:**
+```ts
+{
+  attributes: {
+    content: { type: String, required: true }
+  },
+  transform(node) {
+    return node.attributes.content;
+  }
+}
+```
+
+**Attributes:**
+- `content` (required) - Text content
+
+**Renders as:** Plain text string
+
+---
+
+### strong
+
+Bold text.
+
+**Schema:**
+```ts
+{
+  render: 'strong',
+  children: ['em', 's', 'link', 'code', 'text', 'tag'],
+  attributes: {
+    marker: { type: String, render: false }
+  }
+}
+```
+
+**Markdown:**
+```markdown
+**bold text** or __bold text__
+```
+
+**Renders as:** `<strong>`
+
+---
+
+### em
+
+Italic text.
+
+**Schema:**
+```ts
+{
+  render: 'em',
+  children: ['strong', 's', 'link', 'code', 'text', 'tag'],
+  attributes: {
+    marker: { type: String, render: false }
+  }
+}
+```
+
+**Markdown:**
+```markdown
+*italic text* or _italic text_
+```
+
+**Renders as:** `<em>`
+
+---
+
+### s
+
+Strikethrough text.
+
+**Schema:**
+```ts
+{
+  render: 's',
+  children: ['strong', 'em', 'link', 'code', 'text', 'tag']
+}
+```
+
+**Markdown:**
+```markdown
+~~strikethrough text~~
+```
+
+**Renders as:** `<s>`
+
+---
+
+### link
+
+Hyperlinks.
+
+**Schema:**
+```ts
+{
+  render: 'a',
+  children: ['strong', 'em', 's', 'code', 'text', 'tag'],
+  attributes: {
+    href: { type: String, required: true },
+    title: { type: String }
+  }
+}
+```
+
+**Attributes:**
+- `href` (required) - Link URL
+- `title` - Link title (tooltip)
+
+**Markdown:**
+```markdown
+[Link text](https://example.com)
+[Link with title](https://example.com "Title")
+```
+
+**Renders as:** `<a>`
+
+---
+
+### image
+
+Images.
+
+**Schema:**
+```ts
+{
+  render: 'img',
+  attributes: {
+    src: { type: String, required: true },
+    alt: { type: String },
+    title: { type: String }
+  }
+}
+```
+
+**Attributes:**
+- `src` (required) - Image URL
+- `alt` - Alt text
+- `title` - Image title
+
+**Markdown:**
+```markdown
+![Alt text](/path/to/image.jpg)
+![Alt text](/path/to/image.jpg "Title")
+```
+
+**Renders as:** `<img>`
+
+---
+
+### code
+
+Inline code.
+
+**Schema:**
+```ts
+{
+  render: 'code',
+  attributes: {
+    content: { type: String, render: false, required: true }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    return new Tag('code', attributes, [node.attributes.content]);
+  }
+}
+```
+
+**Attributes:**
+- `content` (required) - Code text
+
+**Markdown:**
+```markdown
+`inline code`
+```
+
+**Renders as:** `<code>`
+
+---
+
+### hardbreak
+
+Explicit line break.
+
+**Schema:**
+```ts
+{
+  render: 'br'
+}
+```
+
+**Markdown:**
+```markdown
+Line one  
+Line two
+```
+(Two spaces at end of line)
+
+**Renders as:** `<br>`
+
+---
+
+### softbreak
+
+Soft line break (rendered as space).
+
+**Schema:**
+```ts
+{
+  transform() {
+    return ' ';
+  }
+}
+```
+
+**Renders as:** A space character
+
+---
+
+## Special nodes
+
+### comment
+
+HTML or Markdoc comments.
+
+**Schema:**
+```ts
+{
+  attributes: {
+    content: { type: String, required: true }
+  }
+}
+```
+
+**Markdown:**
+```markdown
+<!-- HTML comment -->
+{/* Markdoc comment */}
+```
+
+Comments are not rendered by default.
+
+---
+
+### error
+
+Represents parsing errors.
+
+**Schema:**
+```ts
+{}
+```
+
+Error nodes are created when Markdoc encounters invalid syntax.
+
+---
+
+### node
+
+Generic fallback node type.
+
+**Schema:**
+```ts
+{}
+```
+
+## Next steps
+
+- Create [custom node schemas](/api/nodes/custom-nodes)
+- Learn about [schemas](/api/schemas)
+- Explore [transforming content](/docs/transform)

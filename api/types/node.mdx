@@ -1,0 +1,492 @@
+---
+title: Node
+description: The Node class represents nodes in the Markdoc Abstract Syntax Tree (AST)
+---
+
+# Node
+
+The `Node` class represents a node in the Markdoc Abstract Syntax Tree (AST). Nodes are created during parsing and represent different elements of your Markdown content (headings, paragraphs, custom tags, etc.).
+
+## Class Definition
+
+```typescript
+class Node implements AstType {
+  readonly $$mdtype = 'Node';
+
+  attributes: Record<string, any>;
+  slots: Record<string, Node>;
+  children: Node[];
+  errors: ValidationError[];
+  lines: number[];
+  type: NodeType;
+  tag?: string;
+  annotations: AttributeValue[];
+  inline: boolean;
+  location?: Location;
+
+  constructor(
+    type: NodeType = 'node',
+    attributes: Record<string, any> = {},
+    children: Node[] = [],
+    tag?: string
+  );
+
+  walk(): Generator<Node, void, unknown>;
+  push(node: Node): void;
+  resolve(config?: Config): Node;
+  findSchema(config?: Config): Schema | undefined;
+  transformAttributes(config?: Config): Record<string, any>;
+  transformChildren(config: Config): RenderableTreeNode[];
+  transform(config: Config): MaybePromise<RenderableTreeNodes>;
+}
+```
+
+## Properties
+
+### `$$mdtype`
+
+**Type:** `'Node'`
+
+A readonly discriminator property that identifies this object as a Markdoc Node. Used for type checking and serialization.
+
+### `attributes`
+
+**Type:** `Record<string, any>`
+
+A key-value object containing the node's attributes. For Markdown elements, these are derived from the syntax. For custom tags, these are the attributes passed in the tag syntax.
+
+**Example:**
+
+```typescript
+// For a heading: ## Hello {#custom-id .my-class}
+node.attributes = {
+  id: 'custom-id',
+  class: 'my-class',
+  level: 2
+};
+
+// For a custom tag: {% callout type="warning" %}
+node.attributes = {
+  type: 'warning'
+};
+```
+
+### `slots`
+
+**Type:** `Record<string, Node>`
+
+Named content slots for the node. Slots allow you to pass multiple named content sections to a tag.
+
+**Example:**
+
+```markdown
+{% card %}
+  {% slot "header" %}
+    Header content
+  {% /slot %}
+  Main content
+{% /card %}
+```
+
+```typescript
+node.slots = {
+  header: Node { /* header content */ }
+};
+```
+
+### `children`
+
+**Type:** `Node[]`
+
+An array of child nodes. Represents the nested content within this node.
+
+### `errors`
+
+**Type:** `ValidationError[]`
+
+An array of validation errors associated with this node. Populated during validation.
+
+### `lines`
+
+**Type:** `number[]`
+
+The line numbers in the source file where this node appears. Used for error reporting and debugging.
+
+### `type`
+
+**Type:** `NodeType`
+
+The type of the node. Can be any of the built-in Markdown node types or `'tag'` for custom tags.
+
+**Built-in NodeTypes:**
+
+```typescript
+type NodeType =
+  | 'blockquote'
+  | 'code'
+  | 'comment'
+  | 'document'
+  | 'em'
+  | 'error'
+  | 'fence'
+  | 'hardbreak'
+  | 'heading'
+  | 'hr'
+  | 'image'
+  | 'inline'
+  | 'item'
+  | 'link'
+  | 'list'
+  | 'node'
+  | 'paragraph'
+  | 's'
+  | 'softbreak'
+  | 'strong'
+  | 'table'
+  | 'tag'
+  | 'tbody'
+  | 'td'
+  | 'text'
+  | 'th'
+  | 'thead'
+  | 'tr';
+```
+
+### `tag`
+
+**Type:** `string | undefined`
+
+For nodes with `type: 'tag'`, this contains the name of the custom tag.
+
+**Example:**
+
+```typescript
+// For {% callout %}...{% /callout %}
+node.type = 'tag';
+node.tag = 'callout';
+```
+
+### `annotations`
+
+**Type:** `AttributeValue[]`
+
+Array of annotations associated with the node. Annotations are metadata that can be attached to nodes.
+
+```typescript
+type AttributeValue = {
+  type: string;
+  name: string;
+  value: any;
+};
+```
+
+### `inline`
+
+**Type:** `boolean`
+
+Indicates whether this node is inline (like `em`, `strong`) or block-level (like `paragraph`, `heading`).
+
+### `location`
+
+**Type:** `Location | undefined`
+
+The source location information for this node, including file path and line/character positions.
+
+```typescript
+type Location = {
+  file?: string;
+  start: LocationEdge;
+  end: LocationEdge;
+};
+
+type LocationEdge = {
+  line: number;
+  character?: number;
+};
+```
+
+## Constructor
+
+```typescript
+constructor(
+  type: NodeType = 'node',
+  attributes: Record<string, any> = {},
+  children: Node[] = [],
+  tag?: string
+)
+```
+
+Creates a new Node instance.
+
+**Parameters:**
+
+- **`type`**: The node type (defaults to `'node'`)
+- **`attributes`**: Initial attributes for the node
+- **`children`**: Array of child nodes
+- **`tag`**: For `type: 'tag'`, the name of the custom tag
+
+**Example:**
+
+```typescript
+import { Node } from '@markdoc/markdoc';
+
+const heading = new Node(
+  'heading',
+  { level: 2 },
+  [
+    new Node('text', {}, [], undefined)
+  ]
+);
+```
+
+## Methods
+
+### `walk()`
+
+**Returns:** `Generator<Node, void, unknown>`
+
+Returns a generator that yields all descendant nodes in depth-first order. This includes both slotted content and regular children.
+
+**Example:**
+
+```typescript
+const ast = Markdoc.parse(content);
+
+// Find all heading nodes
+for (const node of ast.walk()) {
+  if (node.type === 'heading') {
+    console.log('Found heading:', node.attributes.level);
+  }
+}
+
+// Find all custom tags
+for (const node of ast.walk()) {
+  if (node.type === 'tag') {
+    console.log('Found tag:', node.tag);
+  }
+}
+```
+
+### `push(node)`
+
+**Parameters:**
+
+- **`node`**: `Node` - The node to add
+
+**Returns:** `void`
+
+Appends a child node to the `children` array.
+
+**Example:**
+
+```typescript
+const paragraph = new Node('paragraph');
+const text = new Node('text', { content: 'Hello' });
+
+paragraph.push(text);
+```
+
+### `resolve(config?)`
+
+**Parameters:**
+
+- **`config`**: `Config` - Configuration object (optional)
+
+**Returns:** `Node`
+
+Resolves all variables and expressions in the node's attributes and recursively in all children and slots. Returns a new Node with resolved values.
+
+**Example:**
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  variables: {
+    version: '1.0.0'
+  }
+};
+
+const ast = Markdoc.parse('Version: {% $version %}');
+const resolved = ast.resolve(config);
+// Variables are now resolved to their actual values
+```
+
+### `findSchema(config?)`
+
+**Parameters:**
+
+- **`config`**: `Config` - Configuration object (optional)
+
+**Returns:** `Schema | undefined`
+
+Finds and returns the schema associated with this node based on its type and tag. Returns `undefined` if no schema is found.
+
+**Example:**
+
+```typescript
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: { type: { type: String } }
+    }
+  }
+};
+
+for (const node of ast.walk()) {
+  const schema = node.findSchema(config);
+  if (schema) {
+    console.log('Node uses schema:', schema.render);
+  }
+}
+```
+
+### `transformAttributes(config?)`
+
+**Parameters:**
+
+- **`config`**: `Config` - Configuration object (optional)
+
+**Returns:** `Record<string, any>`
+
+Transforms the node's attributes according to the schema configuration. This applies attribute transformations, filtering, and renaming as defined in the schema.
+
+**Example:**
+
+```typescript
+const config = {
+  tags: {
+    button: {
+      render: 'Button',
+      attributes: {
+        className: {
+          type: String,
+          render: 'class' // Rename to 'class'
+        },
+        internal: {
+          type: String,
+          render: false // Don't render
+        }
+      }
+    }
+  }
+};
+
+const attrs = node.transformAttributes(config);
+// { class: '...', internal not included }
+```
+
+### `transformChildren(config)`
+
+**Parameters:**
+
+- **`config`**: `Config` - Configuration object
+
+**Returns:** `RenderableTreeNode[]`
+
+Transforms all child nodes into renderable tree nodes (Tags or scalar values).
+
+**Example:**
+
+```typescript
+const children = node.transformChildren(config);
+// Returns array of Tag instances and scalar values
+```
+
+### `transform(config)`
+
+**Parameters:**
+
+- **`config`**: `Config` - Configuration object
+
+**Returns:** `MaybePromise<RenderableTreeNodes>`
+
+Transforms the entire node into a renderable tree. This is the main transformation method that converts AST nodes into the final render tree.
+
+**Example:**
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const ast = Markdoc.parse(content);
+const renderTree = ast.transform(config);
+// renderTree contains Tag instances ready for rendering
+```
+
+## Complete Example
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const source = `
+# Hello World
+
+This is a paragraph with **bold** text.
+
+{% callout type="info" %}
+Important information here.
+{% /callout %}
+`;
+
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String, default: 'info' }
+      }
+    }
+  }
+};
+
+// Parse the content into an AST
+const ast = Markdoc.parse(source);
+console.log('Root node type:', ast.type); // 'document'
+
+// Walk through all nodes
+for (const node of ast.walk()) {
+  if (node.type === 'heading') {
+    console.log('Heading level:', node.attributes.level);
+  }
+  
+  if (node.type === 'tag' && node.tag === 'callout') {
+    console.log('Callout type:', node.attributes.type);
+    
+    // Get the schema for this node
+    const schema = node.findSchema(config);
+    console.log('Renders as:', schema?.render);
+  }
+}
+
+// Resolve variables and expressions
+const resolved = ast.resolve(config);
+
+// Transform to renderable tree
+const renderTree = resolved.transform(config);
+
+// Render to HTML
+const html = Markdoc.renderers.html(renderTree);
+```
+
+## Type Guards
+
+You can check if an object is a Node using the `$$mdtype` property:
+
+```typescript
+function isNode(value: any): value is Node {
+  return value?.$$mdtype === 'Node';
+}
+
+if (isNode(someObject)) {
+  // TypeScript knows someObject is a Node
+  console.log(someObject.type);
+}
+```
+
+## Related Types
+
+- [Schema](/api/types/schema) - Defines how nodes are transformed and validated
+- [Config](/api/types/config) - Configuration passed to node methods
+- [Tag](/api/types/tag) - The output of node transformation
+- `ValidationError` - Validation errors stored in `node.errors`

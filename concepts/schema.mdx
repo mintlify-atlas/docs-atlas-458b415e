@@ -1,0 +1,548 @@
+---
+title: 'Schema System'
+description: 'Understanding schemas for validation and transformation in Markdoc'
+---
+
+## Introduction
+
+Schemas are the core of Markdoc's extensibility system. They define how nodes and tags should be validated, transformed, and rendered. Every element in your content—from headings to custom tags—can have a schema that controls its behavior.
+
+## Schema Structure
+
+A schema is an object that defines the properties of a node or tag:
+
+```typescript
+// From types.ts:103-113
+export type Schema<C extends Config = Config, R = string> = {
+  render?: R;
+  children?: string[];
+  attributes?: Record<string, SchemaAttribute>;
+  slots?: Record<string, SchemaSlot>;
+  selfClosing?: boolean;
+  inline?: boolean;
+  transform?(node: Node, config: C): MaybePromise<RenderableTreeNodes>;
+  validate?(node: Node, config: C): MaybePromise<ValidationError[]>;
+  description?: string;
+};
+```
+
+## Schema Properties
+
+### render
+
+Specifies what the node should render as. For HTML, this is typically an HTML tag name:
+
+```typescript
+// From schema.ts:23-35
+export const heading: Schema = {
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true },
+  },
+  transform(node, config) {
+    return new Tag(
+      `h${node.attributes['level']}`,
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  },
+};
+```
+
+<Tip>
+For simple cases, you can just set `render: 'tagname'`. For dynamic rendering, use a `transform` function.
+</Tip>
+
+### children
+
+Defines which node types are allowed as children:
+
+```typescript
+// From schema.ts:4-20
+export const document: Schema = {
+  render: 'article',
+  children: [
+    'heading',
+    'paragraph',
+    'image',
+    'table',
+    'tag',
+    'fence',
+    'blockquote',
+    'comment',
+    'list',
+    'hr',
+  ],
+  attributes: {
+    frontmatter: { render: false },
+  },
+};
+```
+
+### attributes
+
+Defines the attributes accepted by this node:
+
+```typescript
+// From schema.ts:207-214
+export const link: Schema = {
+  render: 'a',
+  children: ['strong', 'em', 's', 'code', 'text', 'tag'],
+  attributes: {
+    href: { type: String, required: true },
+    title: { type: String },
+  },
+};
+```
+
+### selfClosing
+
+Indicates whether the tag must be self-closing:
+
+```typescript
+// From tags/conditional.ts:57-62
+export const tagElse: Schema = {
+  selfClosing: true,
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false },
+  },
+};
+```
+
+### inline
+
+Specifies whether the tag should be inline or block-level:
+
+```typescript
+export const myTag: Schema = {
+  inline: true,
+  render: 'span',
+  // ...
+};
+```
+
+### transform
+
+Custom transformation function that converts the node into renderable output:
+
+```typescript
+// From schema.ts:59-66
+export const fence: Schema = {
+  render: 'pre',
+  attributes: {
+    content: { type: String, render: false, required: true },
+    language: { type: String, render: 'data-language' },
+    process: { type: Boolean, render: false, default: true },
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.children.length
+      ? node.transformChildren(config)
+      : [node.attributes.content];
+
+    return new Tag('pre', attributes, children);
+  },
+};
+```
+
+### validate
+
+Custom validation function that checks the node's content:
+
+```typescript
+export const customTag: Schema = {
+  validate(node, config) {
+    const errors = [];
+    if (node.attributes.value < 0) {
+      errors.push({
+        id: 'invalid-value',
+        level: 'error',
+        message: 'Value must be positive'
+      });
+    }
+    return errors;
+  }
+};
+```
+
+## Attribute Schemas
+
+Attributes have their own schema structure:
+
+```typescript
+// From types.ts:115-124
+export type SchemaAttribute = {
+  type?: ValidationType | ValidationType[];
+  render?: boolean | string;
+  default?: any;
+  required?: boolean;
+  matches?: SchemaMatches | ((config: Config) => SchemaMatches);
+  validate?(value: any, config: Config, name: string): ValidationError[];
+  errorLevel?: ValidationError['level'];
+  description?: string;
+};
+```
+
+### type
+
+Specifies the expected type(s) for the attribute:
+
+```typescript
+// From schema.ts:138-142
+export const td: Schema = {
+  render: 'td',
+  // ...
+  attributes: {
+    align: { type: String },
+    colspan: { type: Number, render: 'colSpan' },
+    rowspan: { type: Number, render: 'rowSpan' },
+  },
+};
+```
+
+Supported types:
+- `String`
+- `Number`
+- `Boolean`
+- `Object`
+- `Array`
+- Custom types (classes implementing validation)
+
+<Note>
+You can specify multiple types: `type: [String, Number]`
+</Note>
+
+### render
+
+Controls how the attribute appears in rendered output:
+
+```typescript
+attributes: {
+  // Render as-is
+  href: { type: String, render: true },
+  
+  // Don't render at all
+  level: { type: Number, render: false },
+  
+  // Render with different name
+  colspan: { type: Number, render: 'colSpan' },
+}
+```
+
+### default
+
+Provides a default value when the attribute is not specified:
+
+```typescript
+// From schema.ts:52-58
+export const fence: Schema = {
+  render: 'pre',
+  attributes: {
+    content: { type: String, render: false, required: true },
+    language: { type: String, render: 'data-language' },
+    process: { type: Boolean, render: false, default: true },
+  },
+  // ...
+};
+```
+
+### required
+
+Marks an attribute as mandatory:
+
+```typescript
+attributes: {
+  src: { type: String, required: true },
+  alt: { type: String },
+}
+```
+
+Validation will fail if required attributes are missing (from `validator.ts:259-265`):
+
+```typescript
+for (const [key, { required }] of Object.entries(attributes))
+  if (required && node.attributes[key] === undefined)
+    errors.push({
+      id: 'attribute-missing-required',
+      level: 'error',
+      message: `Missing required attribute: '${key}'`,
+    });
+```
+
+### matches
+
+Constrains attribute values to specific patterns or values:
+
+```typescript
+attributes: {
+  // Must match one of these values
+  size: {
+    type: String,
+    matches: ['small', 'medium', 'large']
+  },
+  
+  // Must match regex pattern
+  color: {
+    type: String,
+    matches: /^#[0-9a-f]{6}$/i
+  },
+  
+  // Dynamic matches based on config
+  theme: {
+    type: String,
+    matches: (config) => config.availableThemes
+  }
+}
+```
+
+## Custom Attribute Types
+
+You can create custom attribute types with validation and transformation:
+
+```typescript
+// From types.ts:45-53
+export interface CustomAttributeTypeInterface {
+  transform?(value: any, config: Config): Scalar;
+  validate?(value: any, config: Config, name: string): ValidationError[];
+}
+
+export interface CustomAttributeType {
+  new (): CustomAttributeTypeInterface;
+  readonly prototype: CustomAttributeTypeInterface;
+}
+```
+
+Example from `src/schema-types/class.ts`:
+
+```typescript
+export class Class {
+  transform(value: Record<string, boolean> | string) {
+    if (typeof value === 'string') return value;
+
+    return Object.entries(value)
+      .filter(([, v]) => v)
+      .map(([k]) => k)
+      .join(' ');
+  }
+}
+```
+
+## Global Attributes
+
+Some attributes are available on all nodes:
+
+```typescript
+// From transformer.ts:17-20
+export const globalAttributes: AttributesSchema = {
+  class: { type: Class, render: true },
+  id: { type: Id, render: true },
+};
+```
+
+## Schema Lookup
+
+The transformer finds the appropriate schema for each node:
+
+```typescript
+// From transformer.ts:23-25
+findSchema(node: Node, { nodes = {}, tags = {} }: Config = {}) {
+  return node.tag ? tags[node.tag] : nodes[node.type as NodeType];
+},
+```
+
+- Tags use the `tags` configuration
+- Standard nodes use the `nodes` configuration
+- Custom schemas override defaults
+
+## Validation Process
+
+Validation happens during the `validate()` call:
+
+```typescript
+// From validator.ts:131-145
+export default function validator(node: Node, config: Config) {
+  const schema = node.findSchema(config);
+  const errors: ValidationError[] = [...(node.errors || [])];
+
+  if (!schema) {
+    errors.push({
+      id: node.tag ? 'tag-undefined' : 'node-undefined',
+      level: 'critical',
+      message: node.tag
+        ? `Undefined tag: '${node.tag}'`
+        : `Undefined node: '${node.type}'`,
+    });
+
+    return errors;
+  }
+  // ... more validation
+}
+```
+
+The validator checks:
+
+1. **Schema exists**: Tag or node is defined
+2. **Attribute types**: Values match declared types
+3. **Required attributes**: All required attributes are present
+4. **Attribute values**: Values match `matches` constraints
+5. **Children**: Child node types are allowed
+6. **Self-closing**: Self-closing tags have no children
+7. **Inline placement**: Inline tags are used in inline contexts
+8. **Custom validation**: Schema-specific `validate()` function
+
+<Warning>
+Validation errors have severity levels: `debug`, `info`, `warning`, `error`, and `critical`. Critical errors indicate the content cannot be processed.
+</Warning>
+
+## Transformation Process
+
+During transformation, schemas control how nodes become renderable elements:
+
+```typescript
+// From transformer.ts:71-88
+node(node: Node, config: Config = {}) {
+  const schema = this.findSchema(node, config) ?? {};
+  if (schema && schema.transform instanceof Function)
+    return schema.transform(node, config);
+
+  const children = this.children(node, config);
+  if (!schema || !schema.render) return children;
+
+  const attributes = this.attributes(node, config);
+
+  if (isPromise(attributes) || isPromise(children)) {
+    return Promise.all([attributes, children]).then(
+      (values) => new Tag(schema.render, ...values)
+    );
+  }
+
+  return new Tag(schema.render, attributes, children);
+},
+```
+
+The process:
+
+1. If schema has `transform`, call it
+2. Otherwise, transform children recursively
+3. If schema has `render`, create a Tag with transformed attributes and children
+4. If no `render`, return children directly (unwrapped)
+
+## Practical Examples
+
+### Simple Node Schema
+
+```typescript
+export const paragraph: Schema = {
+  render: 'p',
+  children: ['inline'],
+};
+```
+
+### Complex Tag Schema
+
+```typescript
+export const callout: Schema = {
+  render: 'Callout',
+  children: ['paragraph', 'heading', 'list'],
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error', 'success']
+    },
+    title: { type: String },
+    icon: { type: String, render: false }
+  },
+  transform(node, config) {
+    const { type, title } = node.attributes;
+    const icon = node.attributes.icon || getDefaultIcon(type);
+    
+    return new Tag(
+      'Callout',
+      { type, title, icon },
+      node.transformChildren(config)
+    );
+  },
+  validate(node, config) {
+    const errors = [];
+    if (node.children.length === 0) {
+      errors.push({
+        id: 'callout-empty',
+        level: 'warning',
+        message: 'Callout should have content'
+      });
+    }
+    return errors;
+  }
+};
+```
+
+### Conditional Rendering Schema
+
+```typescript
+// From tags/conditional.ts:36-54
+export const tagIf: Schema = {
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false },
+  },
+
+  transform(node, config) {
+    const conditions = renderConditions(node);
+    for (const { condition, children } of conditions)
+      if (truthy(condition)) {
+        const nodes = children.flatMap<MaybePromise<RenderableTreeNodes>>(
+          (child) => child.transform(config)
+        );
+        if (nodes.some(isPromise)) {
+          return Promise.all(nodes).then((nodes) => nodes.flat());
+        }
+        return nodes as RenderableTreeNode[];
+      }
+    return [];
+  },
+};
+```
+
+## Configuration Example
+
+Putting it all together:
+
+```javascript
+const config = {
+  nodes: {
+    // Override default heading rendering
+    heading: {
+      ...Markdoc.nodes.heading,
+      transform(node, config) {
+        const level = node.attributes.level;
+        const id = generateId(node);
+        return new Tag(
+          `h${level}`,
+          { id, 'data-level': level },
+          node.transformChildren(config)
+        );
+      }
+    }
+  },
+  tags: {
+    callout: calloutSchema,
+    'api-reference': apiReferenceSchema,
+    // ...
+  }
+};
+
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast, config);
+const errors = Markdoc.validate(ast, config);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Nodes" icon="sitemap" href="/concepts/nodes">
+    Understand the AST node structure
+  </Card>
+  <Card title="Tags" icon="tag" href="/concepts/tags">
+    Create custom tags with schemas
+  </Card>
+</CardGroup>

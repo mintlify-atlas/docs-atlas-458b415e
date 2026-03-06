@@ -1,0 +1,484 @@
+---
+title: Schema
+description: The Schema type defines the structure, behavior, and validation rules for custom tags and nodes
+---
+
+# Schema
+
+The `Schema` type is used to define custom tags and customize the behavior of built-in Markdown nodes. It specifies how content should be rendered, what attributes are accepted, how to transform nodes, and validation rules.
+
+## Type Definition
+
+```typescript
+type Schema<C extends Config = Config, R = string> = {
+  render?: R;
+  children?: string[];
+  attributes?: Record<string, SchemaAttribute>;
+  slots?: Record<string, SchemaSlot>;
+  selfClosing?: boolean;
+  inline?: boolean;
+  transform?(node: Node, config: C): MaybePromise<RenderableTreeNodes>;
+  validate?(node: Node, config: C): MaybePromise<ValidationError[]>;
+  description?: string;
+};
+```
+
+## Properties
+
+### `render`
+
+**Type:** `R` (typically `string`)
+
+Specifies what to render for this tag or node. The value depends on your rendering target:
+
+- For HTML: An HTML tag name (e.g., `'div'`, `'span'`, `'article'`)
+- For React: A component name (e.g., `'Callout'`, `'CodeBlock'`)
+- For other renderers: Any identifier your renderer understands
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Callout' // Will render as <Callout /> in React
+};
+```
+
+### `children`
+
+**Type:** `string[]`
+
+Specifies which built-in Markdoc tags are allowed as children. Use this to restrict what content can be nested inside a tag.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Table',
+  children: ['thead', 'tbody'] // Only allow thead and tbody
+};
+```
+
+### `attributes`
+
+**Type:** `Record<string, SchemaAttribute>`
+
+Defines the attributes that can be passed to the tag or node. Each attribute is defined by a [SchemaAttribute](#schemaattribute) object.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Callout',
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error'],
+      description: 'The type of callout to display'
+    },
+    title: {
+      type: String,
+      required: false
+    }
+  }
+};
+```
+
+### `slots`
+
+**Type:** `Record<string, SchemaSlot>`
+
+Defines named slots that can contain content. Slots are similar to children but are named and can be referenced explicitly.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Card',
+  slots: {
+    header: { required: false },
+    footer: { required: false }
+  }
+};
+```
+
+Usage in Markdoc:
+
+```markdown
+{% card %}
+  {% slot "header" %}
+    Card Header
+  {% /slot %}
+  Card body content
+  {% slot "footer" %}
+    Card Footer
+  {% /slot %}
+{% /card %}
+```
+
+### `selfClosing`
+
+**Type:** `boolean`
+
+Indicates whether the tag is self-closing (doesn't have children or closing tag).
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Image',
+  selfClosing: true,
+  attributes: {
+    src: { type: String, required: true },
+    alt: { type: String }
+  }
+};
+```
+
+Usage: `{% image src="/img.png" alt="Description" /%}`
+
+### `inline`
+
+**Type:** `boolean`
+
+Indicates whether the tag should be treated as inline content (like `<em>` or `<strong>`) rather than block-level content.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Badge',
+  inline: true,
+  attributes: {
+    color: { type: String }
+  }
+};
+```
+
+### `transform`
+
+**Type:** `(node: Node, config: Config) => MaybePromise<RenderableTreeNodes>`
+
+A custom transformation function that controls how the node is converted to renderable output. This is where you can implement complex custom logic.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    
+    // Add custom logic
+    if (attributes.variant === 'special') {
+      return new Tag('SpecialComponent', attributes, children);
+    }
+    
+    return new Tag('DefaultComponent', attributes, children);
+  }
+};
+```
+
+### `validate`
+
+**Type:** `(node: Node, config: Config) => MaybePromise<ValidationError[]>`
+
+Custom validation logic for the tag or node. Return an array of `ValidationError` objects for any issues found.
+
+**Example:**
+
+```typescript
+const schema: Schema = {
+  render: 'Link',
+  attributes: {
+    href: { type: String, required: true }
+  },
+  validate(node, config) {
+    const errors: ValidationError[] = [];
+    const href = node.attributes.href;
+    
+    if (href && !href.startsWith('http') && !href.startsWith('/')) {
+      errors.push({
+        id: 'invalid-link',
+        level: 'warning',
+        message: 'Links should be absolute or start with /',
+        location: node.location
+      });
+    }
+    
+    return errors;
+  }
+};
+```
+
+### `description`
+
+**Type:** `string`
+
+A human-readable description of the tag or node, useful for documentation and IDE tooling.
+
+## SchemaAttribute
+
+The `SchemaAttribute` type defines the properties of a single attribute.
+
+```typescript
+type SchemaAttribute = {
+  type?: ValidationType | ValidationType[];
+  render?: boolean | string;
+  default?: any;
+  required?: boolean;
+  matches?: SchemaMatches | ((config: Config) => SchemaMatches);
+  validate?(value: any, config: Config, name: string): ValidationError[];
+  errorLevel?: ValidationError['level'];
+  description?: string;
+};
+```
+
+### Properties
+
+#### `type`
+
+**Type:** `ValidationType | ValidationType[]`
+
+Specifies the expected type(s) for the attribute. Can be:
+
+- Built-in types: `String`, `Number`, `Boolean`, `Object`, `Array`
+- String literals: `'String'`, `'Number'`, `'Boolean'`, `'Object'`, `'Array'`
+- Custom type classes implementing `CustomAttributeType`
+- An array of types (for union types)
+
+**Example:**
+
+```typescript
+attributes: {
+  count: { type: Number },
+  enabled: { type: Boolean },
+  items: { type: Array },
+  variant: { type: [String, Number] } // Union type
+}
+```
+
+#### `render`
+
+**Type:** `boolean | string`
+
+Controls whether and how the attribute is rendered:
+
+- `true`: Render the attribute with its original name
+- `false`: Don't render the attribute
+- `string`: Render the attribute with a different name
+
+**Example:**
+
+```typescript
+attributes: {
+  className: { 
+    type: String,
+    render: 'class' // Renders as 'class' in HTML
+  },
+  internal: {
+    type: String,
+    render: false // Not rendered in output
+  }
+}
+```
+
+#### `default`
+
+**Type:** `any`
+
+The default value to use if the attribute is not provided.
+
+**Example:**
+
+```typescript
+attributes: {
+  variant: {
+    type: String,
+    default: 'primary'
+  }
+}
+```
+
+#### `required`
+
+**Type:** `boolean`
+
+Whether the attribute is required. If `true`, validation will fail if the attribute is missing.
+
+**Example:**
+
+```typescript
+attributes: {
+  id: {
+    type: String,
+    required: true
+  }
+}
+```
+
+#### `matches`
+
+**Type:** `SchemaMatches | ((config: Config) => SchemaMatches)`
+
+where `SchemaMatches = RegExp | string[] | null`
+
+Restricts the attribute value to match a pattern or be one of a specific set of values:
+
+- `RegExp`: Value must match the regular expression
+- `string[]`: Value must be one of the strings in the array
+- Function: Dynamically compute the matches based on config
+
+**Example:**
+
+```typescript
+attributes: {
+  size: {
+    type: String,
+    matches: ['small', 'medium', 'large']
+  },
+  email: {
+    type: String,
+    matches: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  },
+  theme: {
+    type: String,
+    matches: (config) => config.variables.availableThemes
+  }
+}
+```
+
+#### `validate`
+
+**Type:** `(value: any, config: Config, name: string) => ValidationError[]`
+
+Custom validation function for the attribute. Return an array of `ValidationError` objects for any issues.
+
+**Example:**
+
+```typescript
+attributes: {
+  percentage: {
+    type: Number,
+    validate(value, config, name) {
+      if (value < 0 || value > 100) {
+        return [{
+          id: 'invalid-percentage',
+          level: 'error',
+          message: `${name} must be between 0 and 100`
+        }];
+      }
+      return [];
+    }
+  }
+}
+```
+
+#### `errorLevel`
+
+**Type:** `'debug' | 'info' | 'warning' | 'error' | 'critical'`
+
+The severity level for validation errors related to this attribute.
+
+#### `description`
+
+**Type:** `string`
+
+A human-readable description of the attribute.
+
+## SchemaSlot
+
+The `SchemaSlot` type defines properties for named content slots.
+
+```typescript
+type SchemaSlot = {
+  render?: boolean | string;
+  required?: boolean;
+};
+```
+
+### Properties
+
+#### `render`
+
+**Type:** `boolean | string`
+
+Controls whether and how the slot is rendered (similar to `SchemaAttribute.render`).
+
+#### `required`
+
+**Type:** `boolean`
+
+Whether the slot must be provided.
+
+## Complete Example
+
+```typescript
+import { Tag, Schema } from '@markdoc/markdoc';
+
+const calloutSchema: Schema = {
+  render: 'Callout',
+  description: 'Display important information to the user',
+  
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error', 'success'],
+      description: 'The type of callout'
+    },
+    title: {
+      type: String,
+      required: false,
+      description: 'Optional title for the callout'
+    },
+    icon: {
+      type: Boolean,
+      default: true,
+      description: 'Whether to show an icon'
+    }
+  },
+  
+  validate(node, config) {
+    const errors = [];
+    const children = node.children;
+    
+    if (children.length === 0) {
+      errors.push({
+        id: 'empty-callout',
+        level: 'warning',
+        message: 'Callout should not be empty',
+        location: node.location
+      });
+    }
+    
+    return errors;
+  },
+  
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    
+    // Add default icon based on type
+    if (attributes.icon && !attributes.iconName) {
+      const iconMap = {
+        info: 'information-circle',
+        warning: 'exclamation-triangle',
+        error: 'x-circle',
+        success: 'check-circle'
+      };
+      attributes.iconName = iconMap[attributes.type];
+    }
+    
+    return new Tag('Callout', attributes, children);
+  }
+};
+
+export default calloutSchema;
+```
+
+## Related Types
+
+- [Config](/api/types/config) - Configuration object containing schemas
+- [Node](/api/types/node) - AST nodes that schemas operate on
+- [Tag](/api/types/tag) - Rendered output from schemas

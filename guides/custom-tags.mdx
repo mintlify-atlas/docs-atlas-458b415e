@@ -1,0 +1,407 @@
+---
+title: Custom Tags
+description: Learn how to create custom tags in Markdoc to extend its functionality with reusable components
+---
+
+# Custom Tags
+
+Custom tags allow you to extend Markdoc with reusable components that can accept attributes and children. Tags are defined in your configuration and can be used throughout your content.
+
+## Overview
+
+Tags in Markdoc are similar to HTML elements or React components. They can:
+- Accept typed attributes
+- Render children content
+- Transform to any output format (HTML, React, etc.)
+- Be self-closing or contain children
+- Be inline or block-level
+
+## Basic Tag Definition
+
+A tag is defined using a schema object with several properties:
+
+```javascript
+const callout = {
+  render: 'div',
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error', 'success']
+    }
+  },
+  children: ['paragraph', 'heading', 'list']
+};
+```
+
+### Schema Properties
+
+- **`render`**: The HTML tag or component name to render
+- **`attributes`**: Defines accepted attributes and their validation
+- **`children`**: Array of allowed child node types
+- **`selfClosing`**: Whether the tag must be self-closing (no children)
+- **`inline`**: Whether the tag is inline (true) or block-level (false)
+- **`transform`**: Custom transformation function
+- **`validate`**: Custom validation function
+
+## Step-by-Step: Creating a Custom Tag
+
+<Steps>
+
+### Step 1: Define the tag schema
+
+Create a schema object that describes your tag's structure:
+
+```javascript
+const button = {
+  render: 'button',
+  attributes: {
+    variant: {
+      type: String,
+      default: 'primary',
+      matches: ['primary', 'secondary', 'danger'],
+      description: 'Button style variant'
+    },
+    size: {
+      type: String,
+      default: 'medium',
+      matches: ['small', 'medium', 'large']
+    },
+    disabled: {
+      type: Boolean,
+      default: false
+    },
+    href: {
+      type: String,
+      description: 'If provided, renders as a link'
+    }
+  },
+  children: ['inline']
+};
+```
+
+### Step 2: Register the tag in your config
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  tags: {
+    button
+  }
+};
+
+const content = `
+{% button variant="primary" size="large" %}
+Click me
+{% /button %}
+`;
+
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast, config);
+```
+
+### Step 3: Use the tag in your content
+
+```markdown
+{% button variant="danger" %}
+Delete Account
+{% /button %}
+
+{% button href="/docs" variant="secondary" %}
+Read the Docs
+{% /button %}
+```
+
+</Steps>
+
+## Advanced: Custom Transform Functions
+
+For more control over rendering, implement a custom `transform` function. This is how Markdoc's built-in `heading` node works:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const heading = {
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true }
+  },
+  transform(node, config) {
+    return new Tag(
+      `h${node.attributes['level']}`,
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  }
+};
+```
+
+### Transform Function Parameters
+
+- **`node`**: The AST node being transformed
+- **`config`**: The full Markdoc configuration
+
+### Returning from Transform
+
+You can return:
+- A `Tag` instance
+- A string
+- An array of nodes
+- `null` to render nothing
+
+## Real Example: Conditional Tag
+
+Here's how Markdoc implements the built-in `{% if %}` tag:
+
+```javascript
+import { ConditionalAttributeType } from './schema-types/conditional';
+
+function truthy(value) {
+  return value !== false && value !== undefined && value !== null;
+}
+
+const tagIf = {
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false }
+  },
+  
+  transform(node, config) {
+    const conditions = renderConditions(node);
+    for (const { condition, children } of conditions)
+      if (truthy(condition)) {
+        return children.flatMap((child) => child.transform(config));
+      }
+    return [];
+  }
+};
+```
+
+## Self-Closing Tags
+
+For tags that don't accept children:
+
+```javascript
+const image = {
+  render: 'img',
+  selfClosing: true,
+  attributes: {
+    src: { type: String, required: true },
+    alt: { type: String, required: true },
+    width: { type: Number },
+    height: { type: Number }
+  }
+};
+```
+
+Usage:
+
+```markdown
+{% image src="/logo.png" alt="Company Logo" width=200 /%}
+```
+
+## Inline vs Block Tags
+
+Control whether a tag is inline or block-level:
+
+```javascript
+// Block-level tag
+const callout = {
+  render: 'div',
+  inline: false,
+  attributes: {
+    type: { type: String }
+  }
+};
+
+// Inline tag
+const badge = {
+  render: 'span',
+  inline: true,
+  attributes: {
+    color: { type: String }
+  }
+};
+```
+
+## Attribute Types and Validation
+
+### Basic Types
+
+```javascript
+attributes: {
+  name: { type: String, required: true },
+  count: { type: Number, default: 0 },
+  enabled: { type: Boolean },
+  options: { type: Object },
+  items: { type: Array }
+}
+```
+
+### Validation with Matches
+
+```javascript
+attributes: {
+  // String enum
+  size: {
+    type: String,
+    matches: ['sm', 'md', 'lg', 'xl']
+  },
+  // Regex validation
+  color: {
+    type: String,
+    matches: /^#[0-9A-Fa-f]{6}$/
+  }
+}
+```
+
+### Render Control
+
+```javascript
+attributes: {
+  // Render with different name
+  class: { type: String, render: 'className' },
+  
+  // Don't render this attribute
+  internal: { type: String, render: false },
+  
+  // Render with default name
+  id: { type: String, render: true }
+}
+```
+
+## Working with Slots
+
+Slots allow named content sections within a tag:
+
+```javascript
+const card = {
+  render: 'div',
+  attributes: {
+    title: { type: String }
+  },
+  slots: {
+    header: { required: false, render: true },
+    footer: { required: false, render: true }
+  }
+};
+```
+
+Usage:
+
+```markdown
+{% card title="My Card" %}
+  {% slot name="header" %}
+    # Card Header
+  {% /slot %}
+  
+  Main card content goes here.
+  
+  {% slot name="footer" %}
+    Footer content
+  {% /slot %}
+{% /card %}
+```
+
+## Best Practices
+
+1. **Always validate attributes**: Use `type`, `required`, and `matches` to ensure data integrity
+2. **Provide defaults**: Set sensible default values for optional attributes
+3. **Document your tags**: Use the `description` field for attributes
+4. **Control children**: Specify allowed child types to prevent nesting errors
+5. **Handle edge cases**: Return appropriate values when attributes are missing
+
+## Common Patterns
+
+### Wrapper Tag
+
+```javascript
+const container = {
+  render: 'div',
+  attributes: {
+    maxWidth: { type: String, default: '1200px', render: 'data-max-width' }
+  }
+};
+```
+
+### Component Tag
+
+```javascript
+const codeBlock = {
+  render: 'CodeBlock',
+  attributes: {
+    language: { type: String, required: true },
+    filename: { type: String },
+    showLineNumbers: { type: Boolean, default: true }
+  }
+};
+```
+
+### Data Tag
+
+```javascript
+const partial = {
+  selfClosing: true,
+  attributes: {
+    file: { type: String, required: true, render: false },
+    variables: { type: Object, render: false }
+  },
+  transform(node, config) {
+    const { partials = {} } = config;
+    const { file, variables } = node.attributes;
+    const partial = partials[file];
+    
+    if (!partial) return null;
+    
+    const scopedConfig = {
+      ...config,
+      variables: { ...config.variables, ...variables }
+    };
+    
+    return Array.isArray(partial)
+      ? partial.flatMap((p) => p.transform(scopedConfig))
+      : partial.transform(scopedConfig);
+  }
+};
+```
+
+## Troubleshooting
+
+### Tag not recognized
+
+Make sure the tag is registered in your config:
+
+```javascript
+const config = {
+  tags: {
+    myTag // Add your tag here
+  }
+};
+```
+
+### Validation errors
+
+Check that:
+- Required attributes are provided
+- Attribute values match the specified type
+- Values satisfy `matches` constraints
+
+### Children not rendering
+
+Ensure you call `node.transformChildren(config)` in your transform function:
+
+```javascript
+transform(node, config) {
+  return new Tag(
+    'div',
+    node.transformAttributes(config),
+    node.transformChildren(config) // Don't forget this!
+  );
+}
+```
+
+## Next Steps
+
+- Learn about [Custom Nodes](/guides/custom-nodes) to modify how Markdown is rendered
+- Explore [Custom Functions](/guides/custom-functions) for dynamic attribute values
+- See [Validation](/guides/validation) for advanced validation techniques

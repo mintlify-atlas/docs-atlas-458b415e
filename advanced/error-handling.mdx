@@ -1,0 +1,636 @@
+---
+title: Error Handling
+description: Comprehensive guide to error handling, validation, and debugging in Markdoc
+---
+
+# Error Handling
+
+Markdoc provides a comprehensive error handling system that helps you catch and debug issues during parsing, validation, and transformation.
+
+## ValidationError Type
+
+All errors in Markdoc follow the `ValidationError` structure:
+
+```typescript
+type ValidationError = {
+  id: string;
+  level: 'debug' | 'info' | 'warning' | 'error' | 'critical';
+  message: string;
+  location?: Location;
+};
+
+type Location = {
+  file?: string;
+  start: LocationEdge;
+  end: LocationEdge;
+};
+
+type LocationEdge = {
+  line: number;
+  character?: number;
+};
+```
+
+### Error Levels
+
+- **debug**: Informational messages for development
+- **info**: Non-critical information
+- **warning**: Potential issues that don't prevent rendering
+- **error**: Validation failures that should be addressed
+- **critical**: Severe errors that prevent proper rendering
+
+## Built-in Error IDs
+
+Markdoc uses consistent error IDs for different validation failures:
+
+### Tag Errors
+
+```typescript
+// Undefined tag
+{
+  id: 'tag-undefined',
+  level: 'critical',
+  message: "Undefined tag: 'callout'"
+}
+
+// Invalid tag placement
+{
+  id: 'tag-placement-invalid',
+  level: 'critical',
+  message: "'link' tag should be inline"
+}
+
+// Self-closing tag with children
+{
+  id: 'tag-selfclosing-has-children',
+  level: 'critical',
+  message: "'image' tag should be self-closing"
+}
+```
+
+### Attribute Errors
+
+```typescript
+// Undefined attribute
+{
+  id: 'attribute-undefined',
+  level: 'error',
+  message: "Invalid attribute: 'color'"
+}
+
+// Invalid attribute type
+{
+  id: 'attribute-type-invalid',
+  level: 'error',
+  message: "Attribute 'size' must be type of 'Number'"
+}
+
+// Invalid attribute value
+{
+  id: 'attribute-value-invalid',
+  level: 'error',
+  message: "Attribute 'type' must match one of [\"note\",\"warning\",\"error\"]. Got 'info' instead."
+}
+
+// Missing required attribute
+{
+  id: 'attribute-missing-required',
+  level: 'error',
+  message: "Missing required attribute: 'src'"
+}
+
+// Duplicate attribute
+{
+  id: 'duplicate-attribute',
+  level: 'warning',
+  message: "Attribute 'class' already set"
+}
+```
+
+### Function Errors
+
+```typescript
+// Undefined function
+{
+  id: 'function-undefined',
+  level: 'critical',
+  message: "Undefined function: 'formatDate'"
+}
+
+// Invalid parameter
+{
+  id: 'parameter-undefined',
+  level: 'error',
+  message: "Invalid parameter: 'format'"
+}
+
+// Invalid parameter type
+{
+  id: 'parameter-type-invalid',
+  level: 'error',
+  message: "Parameter 'count' of 'repeat' must be type of 'Number'"
+}
+
+// Missing required parameter
+{
+  id: 'parameter-missing-required',
+  level: 'error',
+  message: "Missing required parameter: 'value'"
+}
+```
+
+### Variable Errors
+
+```typescript
+// Undefined variable
+{
+  id: 'variable-undefined',
+  level: 'error',
+  message: "Undefined variable: 'user.name'"
+}
+```
+
+### Slot Errors
+
+```typescript
+// Undefined slot
+{
+  id: 'slot-undefined',
+  level: 'error',
+  message: "Invalid slot: 'footer'"
+}
+
+// Missing required slot
+{
+  id: 'slot-missing-required',
+  level: 'error',
+  message: "Missing required slot: 'content'"
+}
+```
+
+### Node Errors
+
+```typescript
+// Undefined node
+{
+  id: 'node-undefined',
+  level: 'critical',
+  message: "Undefined node: 'custom'"
+}
+
+// Invalid child
+{
+  id: 'child-invalid',
+  level: 'warning',
+  message: "Can't nest 'heading' in 'em'"
+}
+```
+
+### Parse Errors
+
+```typescript
+// Parse error
+{
+  id: 'parse-error',
+  level: 'critical',
+  message: "Expected '}' but got end of input",
+  location: {
+    file: 'docs/page.md',
+    start: { line: 5, character: 12 },
+    end: { line: 5, character: 25 }
+  }
+}
+
+// Missing opening tag
+{
+  id: 'missing-opening',
+  level: 'critical',
+  message: "Node 'if' is missing opening"
+}
+
+// Missing closing tag
+{
+  id: 'missing-closing',
+  level: 'critical',
+  message: "Node 'callout' is missing closing"
+}
+
+// No inline annotations
+{
+  id: 'no-inline-annotations',
+  level: 'error',
+  message: "Can't apply inline annotations to 'paragraph'"
+}
+```
+
+## Validation System
+
+Markdoc's validator runs automatically and checks multiple aspects of your document:
+
+### Type Validation
+
+The `validateType` function checks attribute and parameter types:
+
+```typescript
+import { validateType } from '@markdoc/markdoc/validator';
+
+function validateType(
+  type: ValidationType,
+  value: Value,
+  config: Config,
+  key: string
+): boolean | ValidationError[]
+```
+
+#### Type Mappings
+
+```typescript
+const TypeMappings = {
+  String: String,
+  Number: Number,
+  Array: Array,
+  Object: Object,
+  Boolean: Boolean,
+} as const;
+```
+
+#### Union Types
+
+When multiple types are allowed:
+
+```typescript
+const schema: Schema = {
+  attributes: {
+    value: {
+      type: [String, Number], // Accept either type
+      required: true
+    }
+  }
+};
+```
+
+### Validating Trees
+
+Validate entire document trees:
+
+```typescript
+import { validateTree } from '@markdoc/markdoc/validator';
+
+const content = Markdoc.parse(markdown);
+const errors = validateTree(content, config);
+
+if (errors.length > 0) {
+  errors.forEach(({ type, lines, location, error }) => {
+    console.error(`[${error.level}] ${error.message}`);
+    if (location) {
+      console.error(`  at ${location.file}:${location.start.line}:${location.start.character}`);
+    }
+  });
+}
+```
+
+The `validateTree` function returns:
+
+```typescript
+type ValidateError = {
+  type: string;
+  lines: number[];
+  location?: Location;
+  error: ValidationError;
+};
+```
+
+### Walking Trees with Parents
+
+Access parent context during validation:
+
+```typescript
+import { walkWithParents } from '@markdoc/markdoc/validator';
+
+for (const [node, parents] of walkWithParents(content)) {
+  console.log(`Node: ${node.type}`);
+  console.log(`Parents: ${parents.map(p => p.type).join(' > ')}`);
+}
+```
+
+## Custom Validation
+
+### Schema-Level Validation
+
+Add custom validation logic to schemas:
+
+```typescript
+import { Schema, Node, Config, ValidationError } from '@markdoc/markdoc';
+
+const heading: Schema = {
+  render: 'h1',
+  attributes: {
+    level: { type: Number, required: true },
+    id: { type: String }
+  },
+  validate(node: Node, config: Config): ValidationError[] {
+    const errors: ValidationError[] = [];
+    const level = node.attributes.level;
+    
+    // Check heading level
+    if (level < 1 || level > 6) {
+      errors.push({
+        id: 'heading-level-invalid',
+        level: 'error',
+        message: `Heading level must be between 1 and 6, got ${level}`
+      });
+    }
+    
+    // Check for empty headings
+    if (node.children.length === 0) {
+      errors.push({
+        id: 'heading-empty',
+        level: 'warning',
+        message: 'Heading should not be empty'
+      });
+    }
+    
+    // Validate ID format
+    const id = node.attributes.id;
+    if (id && !/^[a-z0-9-]+$/.test(id)) {
+      errors.push({
+        id: 'heading-id-invalid',
+        level: 'error',
+        message: `Heading ID must contain only lowercase letters, numbers, and hyphens`
+      });
+    }
+    
+    return errors;
+  }
+};
+```
+
+### Attribute-Level Validation
+
+Validate individual attributes:
+
+```typescript
+const link: Schema = {
+  render: 'a',
+  attributes: {
+    href: {
+      type: String,
+      required: true,
+      validate(value: any, config: Config, name: string): ValidationError[] {
+        if (typeof value !== 'string') {
+          return [{
+            id: 'href-type-invalid',
+            level: 'error',
+            message: 'href must be a string'
+          }];
+        }
+        
+        // Check for valid URL
+        try {
+          new URL(value);
+        } catch {
+          // Check for relative path
+          if (!value.startsWith('/') && !value.startsWith('#')) {
+            return [{
+              id: 'href-invalid-url',
+              level: 'error',
+              message: `Invalid URL or path: ${value}`
+            }];
+          }
+        }
+        
+        return [];
+      }
+    },
+    target: {
+      type: String,
+      matches: ['_blank', '_self', '_parent', '_top'],
+      errorLevel: 'warning'
+    }
+  }
+};
+```
+
+### Function Validation
+
+Validate custom functions:
+
+```typescript
+import { ConfigFunction, Function, Config, ValidationError } from '@markdoc/markdoc';
+
+const functions: Record<string, ConfigFunction> = {
+  equals: {
+    returns: Boolean,
+    parameters: {
+      a: { type: [String, Number, Boolean], required: true },
+      b: { type: [String, Number, Boolean], required: true }
+    },
+    transform({ a, b }) {
+      return a === b;
+    },
+    validate(fn: Function, config: Config): ValidationError[] {
+      const errors: ValidationError[] = [];
+      const { a, b } = fn.parameters;
+      
+      // Warn if comparing different types
+      if (typeof a !== typeof b) {
+        errors.push({
+          id: 'equals-type-mismatch',
+          level: 'warning',
+          message: `Comparing different types: ${typeof a} and ${typeof b}`
+        });
+      }
+      
+      return errors;
+    }
+  }
+};
+```
+
+### Async Validation
+
+Handle async validation:
+
+```typescript
+const imageTag: Schema = {
+  render: 'img',
+  attributes: {
+    src: { type: String, required: true }
+  },
+  async validate(node: Node, config: Config): Promise<ValidationError[]> {
+    const errors: ValidationError[] = [];
+    const src = node.attributes.src;
+    
+    // Validate that image exists
+    try {
+      const response = await fetch(src, { method: 'HEAD' });
+      if (!response.ok) {
+        errors.push({
+          id: 'image-not-found',
+          level: 'error',
+          message: `Image not found: ${src}`
+        });
+      }
+    } catch (error) {
+      errors.push({
+        id: 'image-fetch-failed',
+        level: 'error',
+        message: `Failed to fetch image: ${src}`
+      });
+    }
+    
+    return errors;
+  }
+};
+```
+
+## Error Handling Patterns
+
+### Collecting Errors
+
+Collect and categorize errors:
+
+```typescript
+function analyzeErrors(errors: ValidateError[]) {
+  const byLevel = errors.reduce((acc, { error }) => {
+    acc[error.level] = (acc[error.level] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const critical = errors.filter(e => e.error.level === 'critical');
+  const hasBlockingErrors = critical.length > 0;
+  
+  return { byLevel, critical, hasBlockingErrors };
+}
+```
+
+### Custom Error Handling
+
+Implement custom error handling:
+
+```typescript
+class MarkdocValidator {
+  private errors: ValidationError[] = [];
+  
+  validate(content: Node, config: Config) {
+    this.errors = [];
+    const treeErrors = validateTree(content, config);
+    
+    for (const { error, location } of treeErrors) {
+      this.errors.push(error);
+      
+      // Log to external service
+      if (error.level === 'critical') {
+        this.logError(error, location);
+      }
+    }
+    
+    return this.errors;
+  }
+  
+  private logError(error: ValidationError, location?: Location) {
+    // Send to error tracking service
+    console.error('[Markdoc Error]', {
+      id: error.id,
+      message: error.message,
+      location: location?.file,
+      line: location?.start.line
+    });
+  }
+  
+  hasErrors(level: ValidationError['level'] = 'error'): boolean {
+    const levels = ['debug', 'info', 'warning', 'error', 'critical'];
+    const minIndex = levels.indexOf(level);
+    
+    return this.errors.some(error => {
+      const errorIndex = levels.indexOf(error.level);
+      return errorIndex >= minIndex;
+    });
+  }
+}
+```
+
+### Error Recovery
+
+Handle errors gracefully:
+
+```typescript
+function safeTransform(node: Node, config: Config) {
+  try {
+    return node.transform(config);
+  } catch (error) {
+    console.error('Transform error:', error);
+    
+    // Return error placeholder
+    return new Tag('div', { class: 'error' }, [
+      `Error rendering ${node.tag || node.type}`
+    ]);
+  }
+}
+```
+
+## Debugging Tips
+
+### Enable Validation
+
+Ensure validation is enabled:
+
+```typescript
+const config: Config = {
+  tags: { /* ... */ },
+  validation: {
+    validateFunctions: true,
+    environment: 'development'
+  }
+};
+```
+
+### Inspect Node Structure
+
+```typescript
+function debugNode(node: Node, depth = 0) {
+  const indent = '  '.repeat(depth);
+  console.log(`${indent}${node.type}${node.tag ? ` [${node.tag}]` : ''}`);
+  console.log(`${indent}  attributes:`, node.attributes);
+  console.log(`${indent}  errors:`, node.errors);
+  
+  for (const child of node.children) {
+    debugNode(child, depth + 1);
+  }
+}
+```
+
+### Track Validation Context
+
+```typescript
+const debug: Schema = {
+  render: 'div',
+  validate(node: Node, config: Config) {
+    const parents = config.validation?.parents || [];
+    console.log('Validation path:', parents.map(p => p.type).join(' > '));
+    return [];
+  }
+};
+```
+
+### Error Formatters
+
+Create readable error messages:
+
+```typescript
+function formatError(error: ValidateError): string {
+  const { type, lines, location, error: err } = error;
+  let message = `[${err.level.toUpperCase()}] ${err.message}`;
+  
+  if (location) {
+    message += `\n  at ${location.file}:${location.start.line}`;
+    if (location.start.character) {
+      message += `:${location.start.character}`;
+    }
+  }
+  
+  message += `\n  in ${type} node at lines ${lines.join('-')}`;
+  
+  return message;
+}
+```

@@ -1,122 +1,126 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Markdoc",
+  "theme": "willow",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#e2d393",
+    "light": "#646467",
+    "dark": "#212124"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/86ec7e99-1855-4898-a254-709bf30c82a7.png",
+  "logo": {
+    "light": "https://media.brand.dev/a6427647-fe94-4206-bb4f-2d062610d0a8.svg",
+    "dark": "https://media.brand.dev/a6427647-fe94-4206-bb4f-2d062610d0a8.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/markdoc/markdoc"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/markdoc/markdoc"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/overview",
+              "concepts/syntax",
+              "concepts/schema",
+              "concepts/nodes",
+              "concepts/tags"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/custom-tags",
+              "guides/custom-nodes",
+              "guides/custom-functions",
+              "guides/renderers",
+              "guides/validation",
+              "guides/react-integration"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Advanced",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "advanced/typescript",
+              "advanced/error-handling",
+              "advanced/performance"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core API",
             "pages": [
-              "api-reference/introduction"
+              "api/parse",
+              "api/transform",
+              "api/validate",
+              "api/render"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Built-in Tags",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/tags/conditional",
+              "api/tags/partial",
+              "api/tags/slot",
+              "api/tags/table"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "pages": [
+              "api/nodes/overview",
+              "api/nodes/markdown-nodes",
+              "api/nodes/custom-nodes"
+            ]
+          },
+          {
+            "group": "Functions",
+            "pages": [
+              "api/functions/overview",
+              "api/functions/built-in"
+            ]
+          },
+          {
+            "group": "Renderers",
+            "pages": [
+              "api/renderers/react",
+              "api/renderers/html"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/config",
+              "api/types/schema",
+              "api/types/node",
+              "api/types/tag"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

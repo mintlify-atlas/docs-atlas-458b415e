@@ -1,0 +1,414 @@
+---
+title: Renderers
+description: Render transformed Markdoc content to React, HTML, or custom formats
+---
+
+# Renderers
+
+After parsing, transforming, and validating your Markdoc content, you need to render it to a specific output format. Markdoc provides built-in renderers for React and HTML, and supports custom renderers for other frameworks.
+
+## React Renderer
+
+The React renderer converts Markdoc's renderable tree into React elements.
+
+### Function Signature
+
+```typescript
+function renderers.react(
+  node: RenderableTreeNodes,
+  React: { createElement, Fragment },
+  options?: RenderOpts
+): ReactNode
+```
+
+### Parameters
+
+<ParamField path="node" type="RenderableTreeNodes" required>
+  The transformed content from `Markdoc.transform()`
+</ParamField>
+
+<ParamField path="React" type="object" required>
+  React library with `createElement` and `Fragment`:
+  ```typescript
+  { createElement: typeof createElement, Fragment: typeof Fragment }
+  ```
+</ParamField>
+
+<ParamField path="options" type="RenderOpts">
+  Rendering options:
+  
+  <ParamField path="options.components" type="Record<string, Component> | function">
+    Map of component names to React components, or a function that resolves component names:
+    ```typescript
+    components: {
+      Callout: CalloutComponent,
+      Heading: HeadingComponent
+    }
+    // or
+    components: (name) => componentRegistry[name]
+    ```
+  </ParamField>
+  
+  <ParamField path="options.resolveTagName" type="function">
+    Custom function to resolve tag names to components
+  </ParamField>
+</ParamField>
+
+### Return Value
+
+<ResponseField name="ReactNode" type="ReactNode">
+  Returns a React element tree that can be rendered directly
+</ResponseField>
+
+### Usage Examples
+
+#### Basic React Rendering
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Hello World
+
+This is **bold** text.
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+const reactNode = Markdoc.renderers.react(content, React);
+
+// In your component
+function Page() {
+  return <div>{reactNode}</div>;
+}
+```
+
+#### With Custom Components
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+
+// Define your components
+function Callout({ type, children }) {
+  return (
+    <div className={`callout callout-${type}`}>
+      {children}
+    </div>
+  );
+}
+
+function Heading({ level, id, children }) {
+  const Tag = `h${level}`;
+  return <Tag id={id}>{children}</Tag>;
+}
+
+const components = {
+  Callout,
+  Heading
+};
+
+const config = {
+  nodes: {
+    heading: {
+      render: 'Heading',
+      attributes: {
+        level: { type: Number },
+        id: { type: String }
+      }
+    }
+  },
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String, default: 'info' }
+      }
+    }
+  }
+};
+
+const doc = `
+# My Heading {% #my-id %}
+
+{% callout type="warning" %}
+Important information!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+const reactNode = Markdoc.renderers.react(content, React, { components });
+
+function Page() {
+  return <article>{reactNode}</article>;
+}
+```
+
+#### Dynamic Component Resolution
+
+```jsx
+import React from 'react';
+import * as AllComponents from './components';
+
+const doc = `{% CustomComponent foo="bar" /%}`;
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+
+// Use a function to dynamically resolve components
+const reactNode = Markdoc.renderers.react(
+  content,
+  React,
+  {
+    components: (name) => {
+      if (name in AllComponents) {
+        return AllComponents[name];
+      }
+      // Fallback to div for unknown components
+      return 'div';
+    }
+  }
+);
+```
+
+#### With Next.js
+
+```jsx
+// app/page.js
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+import { readFileSync } from 'fs';
+import { Callout } from '@/components/Callout';
+
+const components = {
+  Callout
+};
+
+export default function Page() {
+  const content = readFileSync('content/page.md', 'utf-8');
+  const ast = Markdoc.parse(content);
+  const transformedContent = Markdoc.transform(ast, config);
+  
+  return (
+    <main>
+      {Markdoc.renderers.react(transformedContent, React, { components })}
+    </main>
+  );
+}
+```
+
+## React Static Renderer
+
+For static site generation, use the static renderer which pre-serializes the content:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+
+// Serialize for static generation
+const staticContent = Markdoc.renderers.reactStatic(content);
+
+// Later, hydrate on the client
+const reactNode = Markdoc.renderers.react(staticContent, React, { components });
+```
+
+## HTML Renderer
+
+The HTML renderer converts Markdoc content to HTML strings.
+
+### Function Signature
+
+```typescript
+function renderers.html(
+  node: RenderableTreeNodes
+): string
+```
+
+### Usage Examples
+
+#### Basic HTML Rendering
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Hello World
+
+This is a [link](https://example.com).
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(content);
+
+console.log(html);
+// <article>
+//   <h1>Hello World</h1>
+//   <p>This is a <a href="https://example.com">link</a>.</p>
+// </article>
+```
+
+#### With Custom Tags
+
+```javascript
+const config = {
+  tags: {
+    callout: {
+      render: 'div',
+      attributes: {
+        type: { type: String, render: 'data-type' }
+      }
+    }
+  }
+};
+
+const doc = `
+{% callout type="warning" %}
+Important!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+const html = Markdoc.renderers.html(content);
+
+// <div data-type="warning">
+//   <p>Important!</p>
+// </div>
+```
+
+#### Server-Side Rendering
+
+```javascript
+// Express.js example
+app.get('/doc/:slug', (req, res) => {
+  const markdown = getMarkdownContent(req.params.slug);
+  const ast = Markdoc.parse(markdown);
+  const content = Markdoc.transform(ast, config);
+  const html = Markdoc.renderers.html(content);
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <body>
+        ${html}
+      </body>
+    </html>
+  `);
+});
+```
+
+## Custom Renderers
+
+You can create custom renderers for other frameworks:
+
+### Vue Renderer Example
+
+```javascript
+import { h } from 'vue';
+import Tag from '@markdoc/markdoc/dist/tag';
+
+function vueRenderer(node, components = {}) {
+  function render(node) {
+    if (Array.isArray(node)) {
+      return node.map(render);
+    }
+    
+    if (node === null || typeof node !== 'object' || !Tag.isTag(node)) {
+      return node;
+    }
+    
+    const { name, attributes = {}, children = [] } = node;
+    const component = components[name] || name;
+    
+    return h(
+      component,
+      attributes,
+      children.map(render)
+    );
+  }
+  
+  return render(node);
+}
+
+// Usage
+const vueNode = vueRenderer(content, { Callout: CalloutComponent });
+```
+
+### Svelte Renderer Example
+
+```javascript
+import Tag from '@markdoc/markdoc/dist/tag';
+
+function svelteRenderer(node, components = {}) {
+  function render(node) {
+    if (Array.isArray(node)) {
+      return node.map(render);
+    }
+    
+    if (node === null || typeof node !== 'object' || !Tag.isTag(node)) {
+      return node;
+    }
+    
+    const { name, attributes = {}, children = [] } = node;
+    const Component = components[name];
+    
+    if (Component) {
+      return {
+        component: Component,
+        props: attributes,
+        children: children.map(render)
+      };
+    }
+    
+    return {
+      tag: name,
+      attributes,
+      children: children.map(render)
+    };
+  }
+  
+  return render(node);
+}
+```
+
+## Tag Helper
+
+For custom renderers, use the `Tag` class to check node types:
+
+```javascript
+import Tag from '@markdoc/markdoc/dist/tag';
+
+if (Tag.isTag(node)) {
+  // node is a Tag with { name, attributes, children }
+  const { name, attributes, children } = node;
+}
+```
+
+## Implementation Details
+
+The React renderer (src/renderers/react/react.ts:30-72):
+
+1. **Recursively** traverses the renderable tree
+2. **Resolves** component names to actual components
+3. **Transforms** `class` attribute to `className` for React
+4. **Deep-renders** attribute values (for nested expressions)
+5. **Creates** React elements with `React.createElement`
+6. **Returns** a complete React element tree
+
+The HTML renderer:
+
+1. **Walks** the renderable tree
+2. **Serializes** tags to HTML strings
+3. **Escapes** text content
+4. **Handles** self-closing tags
+5. **Returns** a complete HTML string
+
+## Related APIs
+
+- [parse()](/api/parse) - Parse Markdown to AST
+- [transform()](/api/transform) - Transform to renderable tree
+- [validate()](/api/validate) - Validate before rendering

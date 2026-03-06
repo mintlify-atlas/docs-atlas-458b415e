@@ -1,0 +1,434 @@
+---
+title: Tag
+description: The Tag class represents renderable elements in the Markdoc output tree
+---
+
+# Tag
+
+The `Tag` class represents a renderable element in the Markdoc output tree. After transforming the AST, nodes become `Tag` instances (or scalar values) that can be rendered to your target format (HTML, React, etc.).
+
+## Class Definition
+
+```typescript
+class Tag<
+  N extends string = string,
+  A extends Record<string, any> = Record<string, any>
+> {
+  readonly $$mdtype = 'Tag' as const;
+
+  static isTag(tag: any): tag is Tag;
+
+  name: N;
+  attributes: A;
+  children: RenderableTreeNode[];
+
+  constructor(
+    name?: N,
+    attributes?: A,
+    children?: RenderableTreeNode[]
+  );
+}
+```
+
+## Type Parameters
+
+### `N`
+
+**Type:** `string`
+
+The type of the tag name. Defaults to `string` but can be narrowed for type safety.
+
+**Example:**
+
+```typescript
+const button: Tag<'Button'> = new Tag('Button', { variant: 'primary' });
+```
+
+### `A`
+
+**Type:** `Record<string, any>`
+
+The type of the attributes object. Can be specified for better type checking.
+
+**Example:**
+
+```typescript
+type ButtonAttributes = {
+  variant: 'primary' | 'secondary';
+  disabled?: boolean;
+};
+
+const button: Tag<'Button', ButtonAttributes> = new Tag(
+  'Button',
+  { variant: 'primary', disabled: false }
+);
+```
+
+## Properties
+
+### `$$mdtype`
+
+**Type:** `'Tag'`
+
+A readonly discriminator property that identifies this object as a Markdoc Tag. Used for type checking and to distinguish Tags from other renderable tree nodes.
+
+### `name`
+
+**Type:** `N` (extends `string`)
+
+The name of the tag. This corresponds to:
+
+- The HTML element name when rendering to HTML (e.g., `'div'`, `'span'`, `'article'`)
+- The component name when rendering to React (e.g., `'Callout'`, `'CodeBlock'`)
+- Any identifier meaningful to your custom renderer
+
+**Example:**
+
+```typescript
+const tag = new Tag('Callout');
+console.log(tag.name); // 'Callout'
+```
+
+### `attributes`
+
+**Type:** `A` (extends `Record<string, any>`)
+
+A key-value object containing the tag's attributes. These are passed as props in React or as HTML attributes in HTML rendering.
+
+**Example:**
+
+```typescript
+const tag = new Tag('Button', {
+  type: 'button',
+  className: 'btn btn-primary',
+  onClick: 'handleClick'
+});
+
+console.log(tag.attributes);
+// { type: 'button', className: 'btn btn-primary', onClick: 'handleClick' }
+```
+
+### `children`
+
+**Type:** `RenderableTreeNode[]`
+
+An array of child nodes, which can be:
+
+- Other `Tag` instances (nested tags)
+- Scalar values: `string`, `number`, `boolean`, `null`, or plain objects/arrays
+
+```typescript
+type RenderableTreeNode = Tag | Scalar;
+type Scalar = Primitive | Scalar[] | { [key: string]: Scalar };
+type Primitive = null | boolean | number | string;
+```
+
+**Example:**
+
+```typescript
+const tag = new Tag('div', { class: 'container' }, [
+  new Tag('h1', {}, ['Hello World']),
+  new Tag('p', {}, ['This is a paragraph.']),
+  'Plain text content'
+]);
+```
+
+## Constructor
+
+```typescript
+constructor(
+  name = 'div' as N,
+  attributes = {} as A,
+  children: RenderableTreeNode[] = []
+)
+```
+
+Creates a new Tag instance.
+
+**Parameters:**
+
+- **`name`**: The tag name (defaults to `'div'`)
+- **`attributes`**: Attributes object (defaults to `{}`)
+- **`children`**: Array of child nodes (defaults to `[]`)
+
+**Example:**
+
+```typescript
+import { Tag } from '@markdoc/markdoc';
+
+// Simple tag
+const simple = new Tag('span');
+
+// Tag with attributes
+const withAttrs = new Tag('div', { id: 'main', class: 'container' });
+
+// Tag with children
+const withChildren = new Tag('ul', {}, [
+  new Tag('li', {}, ['Item 1']),
+  new Tag('li', {}, ['Item 2'])
+]);
+
+// Complete tag
+const complete = new Tag(
+  'article',
+  { id: 'post-1', class: 'blog-post' },
+  [
+    new Tag('h1', {}, ['Article Title']),
+    new Tag('p', {}, ['Article content...']),
+  ]
+);
+```
+
+## Static Methods
+
+### `Tag.isTag(tag)`
+
+**Parameters:**
+
+- **`tag`**: `any` - Value to check
+
+**Returns:** `tag is Tag`
+
+Type guard that checks if a value is a Tag instance.
+
+**Example:**
+
+```typescript
+import { Tag } from '@markdoc/markdoc';
+
+const value: any = getSomeValue();
+
+if (Tag.isTag(value)) {
+  // TypeScript knows value is a Tag
+  console.log('Tag name:', value.name);
+  console.log('Attributes:', value.attributes);
+  console.log('Children:', value.children);
+}
+```
+
+## Usage Examples
+
+### Creating Tags from Schema Transform
+
+```typescript
+import { Tag, Schema } from '@markdoc/markdoc';
+
+const calloutSchema: Schema = {
+  render: 'Callout',
+  attributes: {
+    type: { type: String, default: 'info' }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    
+    return new Tag('Callout', attributes, children);
+  }
+};
+```
+
+### Nested Tags
+
+```typescript
+import { Tag } from '@markdoc/markdoc';
+
+const card = new Tag(
+  'Card',
+  { variant: 'elevated' },
+  [
+    new Tag('CardHeader', {}, [
+      new Tag('h2', {}, ['Card Title'])
+    ]),
+    new Tag('CardBody', {}, [
+      new Tag('p', {}, ['Card content goes here.']),
+      new Tag('Button', { variant: 'primary' }, ['Click me'])
+    ]),
+    new Tag('CardFooter', {}, [
+      'Footer text'
+    ])
+  ]
+);
+```
+
+### Traversing the Tag Tree
+
+```typescript
+function walkTags(node: RenderableTreeNode, depth = 0): void {
+  if (Tag.isTag(node)) {
+    console.log('  '.repeat(depth) + `<${node.name}>`);
+    
+    for (const child of node.children) {
+      walkTags(child, depth + 1);
+    }
+    
+    console.log('  '.repeat(depth) + `</${node.name}>`);
+  } else {
+    console.log('  '.repeat(depth) + `"${node}"`);
+  }
+}
+
+const renderTree = ast.transform(config);
+walkTags(renderTree);
+```
+
+### Modifying Tags
+
+```typescript
+import { Tag } from '@markdoc/markdoc';
+
+function addClassToTag(tag: Tag, className: string): Tag {
+  if (!Tag.isTag(tag)) return tag;
+  
+  const existingClass = tag.attributes.class || '';
+  const newClass = existingClass ? `${existingClass} ${className}` : className;
+  
+  return new Tag(
+    tag.name,
+    { ...tag.attributes, class: newClass },
+    tag.children
+  );
+}
+
+const original = new Tag('div', { id: 'content' }, ['Text']);
+const modified = addClassToTag(original, 'highlighted');
+
+console.log(modified.attributes);
+// { id: 'content', class: 'highlighted' }
+```
+
+## Rendering Tags
+
+### HTML Rendering
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const ast = Markdoc.parse(content);
+const renderTree = ast.transform(config);
+
+// Render to HTML string
+const html = Markdoc.renderers.html(renderTree);
+console.log(html);
+```
+
+### React Rendering
+
+```typescript
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+
+const ast = Markdoc.parse(content);
+const renderTree = ast.transform(config);
+
+// Render to React elements
+const content = Markdoc.renderers.react(renderTree, React, {
+  components: {
+    Callout: CalloutComponent,
+    Button: ButtonComponent
+  }
+});
+
+function MyPage() {
+  return <div>{content}</div>;
+}
+```
+
+### Custom Rendering
+
+```typescript
+import { Tag, RenderableTreeNode } from '@markdoc/markdoc';
+
+function renderToCustomFormat(node: RenderableTreeNode): string {
+  if (!Tag.isTag(node)) {
+    // Scalar value
+    return String(node);
+  }
+  
+  // Custom rendering logic
+  const attrs = Object.entries(node.attributes)
+    .map(([key, val]) => `${key}="${val}"`)
+    .join(' ');
+  
+  const children = node.children
+    .map(child => renderToCustomFormat(child))
+    .join('');
+  
+  return `<${node.name}${attrs ? ' ' + attrs : ''}>${children}</${node.name}>`;
+}
+
+const ast = Markdoc.parse(content);
+const renderTree = ast.transform(config);
+const output = renderToCustomFormat(renderTree);
+```
+
+## Type Safety with Tags
+
+```typescript
+import { Tag } from '@markdoc/markdoc';
+
+// Define specific tag types
+type ButtonTag = Tag<'Button', {
+  variant: 'primary' | 'secondary';
+  disabled?: boolean;
+  onClick?: string;
+}>;
+
+type HeadingTag = Tag<'h1' | 'h2' | 'h3', {
+  id?: string;
+  class?: string;
+}>;
+
+// Type-safe tag creation
+function createButton(variant: 'primary' | 'secondary'): ButtonTag {
+  return new Tag('Button', { variant });
+}
+
+function createHeading(level: 1 | 2 | 3, text: string): HeadingTag {
+  return new Tag(`h${level}` as 'h1' | 'h2' | 'h3', {}, [text]);
+}
+
+const button = createButton('primary');
+const heading = createHeading(1, 'Hello World');
+```
+
+## RenderableTreeNode Type
+
+Tags are part of the `RenderableTreeNode` type, which represents any node in the final render tree:
+
+```typescript
+type RenderableTreeNode = Tag | Scalar;
+type RenderableTreeNodes = RenderableTreeNode | RenderableTreeNode[];
+
+type Scalar = Primitive | Scalar[] | { [key: string]: Scalar };
+type Primitive = null | boolean | number | string;
+```
+
+This means that children can be:
+
+- `Tag` instances
+- Strings
+- Numbers
+- Booleans
+- `null`
+- Arrays of any of the above
+- Objects with scalar values
+
+**Example:**
+
+```typescript
+const tag = new Tag('div', {}, [
+  'Text string',
+  42,
+  true,
+  null,
+  new Tag('span', {}, ['nested']),
+  ['array', 'of', 'strings'],
+  { data: 'object' }
+]);
+```
+
+## Related Types
+
+- [Node](/api/types/node) - AST nodes that transform into Tags
+- [Schema](/api/types/schema) - Defines how nodes transform into Tags
+- [Config](/api/types/config) - Configuration used during transformation

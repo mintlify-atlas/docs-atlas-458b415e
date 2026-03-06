@@ -1,0 +1,281 @@
+---
+title: transform()
+description: Transform a Markdoc AST into a renderable tree structure
+---
+
+# transform()
+
+The `transform()` function converts a Markdoc AST into a renderable tree structure by applying schemas, resolving variables, and executing functions. This is the critical step between parsing and rendering.
+
+## Function Signature
+
+```typescript
+function transform<C extends Config = Config>(
+  node: Node,
+  config?: C
+): RenderableTreeNode
+
+function transform<C extends Config = Config>(
+  nodes: Node[],
+  config?: C
+): RenderableTreeNode[]
+```
+
+## Parameters
+
+<ParamField path="node" type="Node | Node[]" required>
+  The Markdoc AST node(s) to transform. Typically the output from `parse()`, but can be any node or array of nodes from the tree.
+</ParamField>
+
+<ParamField path="config" type="Config">
+  Configuration object that defines how to transform the content:
+  
+  <ParamField path="config.nodes" type="Record<NodeType, Schema>">
+    Schema definitions for Markdown nodes (heading, paragraph, list, etc.)
+  </ParamField>
+  
+  <ParamField path="config.tags" type="Record<string, Schema>">
+    Schema definitions for custom tags (e.g., `{% callout %}`, `{% table %}`)
+  </ParamField>
+  
+  <ParamField path="config.variables" type="Record<string, any>">
+    Variables to resolve during transformation (e.g., `{% $product.name %}`)
+  </ParamField>
+  
+  <ParamField path="config.functions" type="Record<string, ConfigFunction>">
+    Custom functions available in expressions (e.g., `{% equals(a, b) %}`)
+  </ParamField>
+  
+  <ParamField path="config.partials" type="Record<string, any>">
+    Reusable content partials that can be included
+  </ParamField>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="RenderableTreeNode" type="Tag | Scalar | Array">
+  Returns a renderable tree structure that can be passed to a renderer:
+  - `Tag` objects with `{ name, attributes, children }`
+  - Scalar values (strings, numbers, booleans)
+  - Arrays of the above
+  
+  The structure is framework-agnostic and can be rendered to React, HTML, or other formats.
+</ResponseField>
+
+## Usage Examples
+
+### Basic Transformation
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Hello World
+
+This is a paragraph.
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+
+console.log(content);
+// Tag { name: 'article', attributes: {}, children: [...] }
+```
+
+### Transformation with Custom Tags
+
+```javascript
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: {
+          type: String,
+          default: 'info',
+          matches: ['info', 'warning', 'error']
+        }
+      }
+    }
+  }
+};
+
+const doc = `
+{% callout type="warning" %}
+This is important!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+
+// Results in:
+// Tag { name: 'Callout', attributes: { type: 'warning' }, children: [...] }
+```
+
+### Using Variables
+
+```javascript
+const config = {
+  variables: {
+    product: {
+      name: 'Markdoc',
+      version: '0.4.0'
+    }
+  }
+};
+
+const doc = `Welcome to {% $product.name %} version {% $product.version %}!`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+
+// Variables are resolved to their values
+```
+
+### Custom Node Schemas
+
+```javascript
+const config = {
+  nodes: {
+    heading: {
+      render: 'Heading',
+      attributes: {
+        level: { type: Number, required: true },
+        id: { type: String }
+      },
+      transform(node, config) {
+        // Custom transformation logic
+        const attributes = {
+          level: node.attributes.level,
+          id: node.attributes.id || generateId(node)
+        };
+        
+        return new Tag(
+          'Heading',
+          attributes,
+          node.transformChildren(config)
+        );
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse('# My Heading');
+const content = Markdoc.transform(ast, config);
+```
+
+### Using Functions
+
+```javascript
+const config = {
+  functions: {
+    uppercase: {
+      transform(parameters) {
+        const [text] = Object.values(parameters);
+        return text.toUpperCase();
+      }
+    }
+  }
+};
+
+const doc = `{% uppercase("hello world") %}`;
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+// Returns: "HELLO WORLD"
+```
+
+### Conditional Rendering
+
+```javascript
+const config = {
+  variables: {
+    env: 'production'
+  },
+  tags: {
+    if: {
+      render: null, // Built-in conditional logic
+      attributes: {
+        condition: { type: Boolean, required: true }
+      }
+    }
+  }
+};
+
+const doc = `
+{% if equals($env, "production") %}
+Production content
+{% /if %}
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+```
+
+## Transformation Process
+
+The `transform()` function (index.ts:69-87):
+
+1. **Merges** the config with default nodes, tags, and functions
+2. **Resolves** variables and functions in the AST
+3. **Applies** schemas to transform nodes into renderable tags
+4. **Processes** attributes through schema-defined transformations
+5. **Recursively** transforms children
+6. **Returns** a framework-agnostic renderable tree
+
+## Schema Definitions
+
+Schemas control how nodes transform:
+
+```typescript
+type Schema = {
+  render?: string;              // Component/element name
+  children?: string[];          // Allowed child node types
+  attributes?: Record<string, SchemaAttribute>;
+  slots?: Record<string, SchemaSlot>;
+  selfClosing?: boolean;        // For self-closing tags
+  inline?: boolean;             // Inline vs block rendering
+  transform?(node: Node, config: Config): RenderableTreeNode;
+  validate?(node: Node, config: Config): ValidationError[];
+};
+```
+
+## Global Attributes
+
+All nodes automatically support these attributes (src/transformer.ts:17-20):
+
+- `class` - CSS classes (transformed to className in React)
+- `id` - Element ID
+
+```javascript
+const doc = `# Heading {% #my-id .my-class %}`;
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+// attributes: { id: 'my-id', class: { 'my-class': true } }
+```
+
+## Async Transformation
+
+Transformation supports async operations:
+
+```javascript
+const config = {
+  tags: {
+    'fetch-data': {
+      async transform(node, config) {
+        const data = await fetch(node.attributes.url);
+        return new Tag('div', {}, [await data.text()]);
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse(doc);
+const content = await Markdoc.transform(ast, config);
+```
+
+## Related APIs
+
+- [parse()](/api/parse) - Parse Markdown to AST
+- [validate()](/api/validate) - Validate AST before transformation
+- [render()](/api/render) - Render transformed content

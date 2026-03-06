@@ -1,0 +1,537 @@
+---
+title: Renderers
+description: Transform Markdoc content to different output formats using built-in and custom renderers
+---
+
+# Renderers
+
+Renderers convert Markdoc's transformed Abstract Syntax Tree (AST) into the final output format. Markdoc includes built-in renderers for HTML and React, and you can create custom renderers for any format.
+
+## Overview
+
+The rendering process:
+
+1. **Parse** → Markdown to AST
+2. **Transform** → AST to renderable tree
+3. **Render** → Renderable tree to final output
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const content = '# Hello world';
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(transformed);
+```
+
+## Built-in Renderers
+
+Markdoc provides three built-in renderers:
+
+```javascript
+import { renderers } from '@markdoc/markdoc';
+
+renderers.html       // HTML string output
+renderers.react      // React elements (dynamic)
+renderers.reactStatic // React elements (static)
+```
+
+## HTML Renderer
+
+The HTML renderer converts the transformed tree to an HTML string.
+
+### Basic Usage
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const content = `
+# Welcome
+
+This is **bold** and this is *italic*.
+`;
+
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(transformed);
+
+console.log(html);
+// <h1>Welcome</h1>
+// <p>This is <strong>bold</strong> and this is <em>italic</em>.</p>
+```
+
+### How It Works
+
+The HTML renderer processes Tag instances:
+
+```javascript
+import MarkdownIt from 'markdown-it';
+import { Tag } from '@markdoc/markdoc';
+const { escapeHtml } = MarkdownIt().utils;
+
+// Void elements (self-closing)
+const voidElements = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr',
+  'img', 'input', 'link', 'meta', 'param',
+  'source', 'track', 'wbr'
+]);
+
+function render(node) {
+  // Handle strings and numbers
+  if (typeof node === 'string' || typeof node === 'number')
+    return escapeHtml(String(node));
+
+  // Handle arrays
+  if (Array.isArray(node))
+    return node.map(render).join('');
+
+  // Handle null or non-Tag objects
+  if (node === null || typeof node !== 'object' || !Tag.isTag(node))
+    return '';
+
+  const { name, attributes, children = [] } = node;
+
+  // Fragment (no wrapper)
+  if (!name) return render(children);
+
+  // Opening tag
+  let output = `<${name}`;
+  for (const [k, v] of Object.entries(attributes ?? {}))
+    output += ` ${k.toLowerCase()}="${escapeHtml(String(v))}"`;
+  output += '>';
+
+  // Void elements don't have closing tags
+  if (voidElements.has(name)) return output;
+
+  // Children and closing tag
+  if (children.length) output += render(children);
+  output += `</${name}>`;
+
+  return output;
+}
+```
+
+### HTML Security
+
+The HTML renderer automatically:
+- Escapes user content to prevent XSS
+- Sanitizes attribute values
+- Handles special HTML characters
+
+## React Renderer
+
+The React renderer creates React elements from the transformed tree.
+
+### Basic Usage
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+
+function MyComponent() {
+  const content = '# Hello from Markdoc';
+  
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast);
+  const reactNode = Markdoc.renderers.react(transformed, React);
+  
+  return <div>{reactNode}</div>;
+}
+```
+
+### With Custom Components
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+import { Callout, Button, CodeBlock } from './components';
+
+const components = {
+  Callout,
+  Button,
+  CodeBlock
+};
+
+function MyComponent() {
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast, config);
+  
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return <div>{reactNode}</div>;
+}
+```
+
+### Component Resolution
+
+The React renderer resolves components by name:
+
+```javascript
+function tagName(name, components) {
+  return typeof name !== 'string'
+    ? name // Already a component (e.g., React.forwardRef)
+    : name[0] !== name[0].toUpperCase()
+    ? name // Lowercase = HTML element
+    : components instanceof Function
+    ? components(name) // Function resolver
+    : components[name]; // Object lookup
+}
+```
+
+You can use either:
+
+```jsx
+// Object mapping
+const components = {
+  Callout: CalloutComponent,
+  Button: ButtonComponent
+};
+
+// Function resolver
+const components = (name) => {
+  switch (name) {
+    case 'Callout': return CalloutComponent;
+    case 'Button': return ButtonComponent;
+    default: return name;
+  }
+};
+```
+
+### How It Works
+
+The React renderer recursively creates elements:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+function dynamic(node, React, { components = {} } = {}) {
+  function deepRender(value) {
+    if (value == null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(deepRender);
+    if (value.$$mdtype === 'Tag') return render(value);
+    
+    // Render nested objects (for attributes)
+    const output = {};
+    for (const [k, v] of Object.entries(value))
+      output[k] = deepRender(v);
+    return output;
+  }
+
+  function render(node) {
+    if (Array.isArray(node))
+      return React.createElement(
+        React.Fragment,
+        null,
+        ...node.map(render)
+      );
+
+    if (node === null || typeof node !== 'object' || !Tag.isTag(node))
+      return node;
+
+    const {
+      name,
+      attributes: { class: className, ...attrs } = {},
+      children = []
+    } = node;
+
+    // Map 'class' to 'className'
+    if (className) attrs.className = className;
+
+    return React.createElement(
+      resolveTagName(name, components),
+      Object.keys(attrs).length === 0 ? null : deepRender(attrs),
+      ...children.map(render)
+    );
+  }
+
+  return render(node);
+}
+```
+
+### Static vs Dynamic
+
+Markdoc provides two React renderers:
+
+```javascript
+// Dynamic: Full React runtime
+renderers.react(transformed, React, { components });
+
+// Static: Optimized for server-side rendering
+renderers.reactStatic(transformed, React, { components });
+```
+
+## Creating a Custom Renderer
+
+<Steps>
+
+### Step 1: Understand the data structure
+
+The transformed tree consists of `Tag` instances:
+
+```typescript
+class Tag {
+  name: string;              // 'div', 'h1', 'MyComponent'
+  attributes: Record<string, any>;
+  children: RenderableTreeNode[];
+  $$mdtype: 'Tag';          // Type marker
+}
+
+type RenderableTreeNode = Tag | string | number | null;
+```
+
+### Step 2: Create the renderer
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+function myRenderer(node) {
+  // Handle primitives
+  if (typeof node === 'string' || typeof node === 'number') {
+    return handleString(node);
+  }
+  
+  // Handle arrays
+  if (Array.isArray(node)) {
+    return node.map(myRenderer).join('');
+  }
+  
+  // Handle null or non-Tag
+  if (node === null || typeof node !== 'object' || !Tag.isTag(node)) {
+    return '';
+  }
+  
+  const { name, attributes, children } = node;
+  
+  // Render the element
+  return renderElement(name, attributes, children.map(myRenderer));
+}
+```
+
+### Step 3: Implement element rendering
+
+```javascript
+function renderElement(name, attributes, children) {
+  // Your custom rendering logic
+  // Return your desired output format
+}
+```
+
+</Steps>
+
+## Example: JSON Renderer
+
+A renderer that outputs JSON:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+function jsonRenderer(node, depth = 0) {
+  // Primitives
+  if (typeof node === 'string' || typeof node === 'number') {
+    return JSON.stringify(node);
+  }
+  
+  // Arrays
+  if (Array.isArray(node)) {
+    const items = node.map(n => jsonRenderer(n, depth + 1)).join(',\n');
+    return `[\n${items}\n${indent(depth)}]`;
+  }
+  
+  // Null or non-Tag
+  if (node === null || typeof node !== 'object' || !Tag.isTag(node)) {
+    return 'null';
+  }
+  
+  // Tag
+  const { name, attributes, children } = node;
+  const parts = [
+    `"type": ${JSON.stringify(name)}`,
+    `"attributes": ${JSON.stringify(attributes)}`,
+    `"children": ${jsonRenderer(children, depth + 1)}`
+  ];
+  
+  return `{\n${parts.map(p => indent(depth + 1) + p).join(',\n')}\n${indent(depth)}}`;
+}
+
+function indent(depth) {
+  return '  '.repeat(depth);
+}
+```
+
+Usage:
+
+```javascript
+const ast = Markdoc.parse('# Hello');
+const transformed = Markdoc.transform(ast);
+const json = jsonRenderer(transformed);
+```
+
+## Example: Markdown Renderer
+
+A renderer that converts back to Markdown:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+function markdownRenderer(node) {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(markdownRenderer).join('');
+  if (!Tag.isTag(node)) return '';
+  
+  const { name, attributes, children } = node;
+  const content = children.map(markdownRenderer).join('');
+  
+  switch (name) {
+    case 'h1': return `# ${content}\n\n`;
+    case 'h2': return `## ${content}\n\n`;
+    case 'h3': return `### ${content}\n\n`;
+    case 'h4': return `#### ${content}\n\n`;
+    case 'h5': return `##### ${content}\n\n`;
+    case 'h6': return `###### ${content}\n\n`;
+    case 'p': return `${content}\n\n`;
+    case 'strong': return `**${content}**`;
+    case 'em': return `*${content}*`;
+    case 'code': return `\`${content}\``;
+    case 'a': return `[${content}](${attributes.href})`;
+    case 'img': return `![${attributes.alt || ''}](${attributes.src})`;
+    case 'ul': return `${content}\n`;
+    case 'ol': return `${content}\n`;
+    case 'li': return `- ${content}\n`;
+    case 'br': return '  \n';
+    default: return content;
+  }
+}
+```
+
+## Example: Plain Text Renderer
+
+Extract plain text content:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+function textRenderer(node) {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  
+  if (Array.isArray(node)) {
+    return node.map(textRenderer).join('');
+  }
+  
+  if (node === null || typeof node !== 'object' || !Tag.isTag(node)) {
+    return '';
+  }
+  
+  const { children } = node;
+  return children.map(textRenderer).join('');
+}
+```
+
+Use cases:
+- Generating meta descriptions
+- Search indexing
+- Reading time estimation
+- Social media previews
+
+## Example: Custom Component Renderer
+
+For framework-specific rendering:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+import { h } from 'my-framework';
+
+function componentRenderer(node, components = {}) {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return node;
+  }
+  
+  if (Array.isArray(node)) {
+    return node.map(n => componentRenderer(n, components));
+  }
+  
+  if (!Tag.isTag(node)) {
+    return null;
+  }
+  
+  const { name, attributes, children } = node;
+  const component = components[name] || name;
+  const childNodes = children.map(c => componentRenderer(c, components));
+  
+  return h(component, attributes, childNodes);
+}
+```
+
+## Best Practices
+
+1. **Handle all node types**: Check for strings, numbers, arrays, null, and Tags
+2. **Escape user content**: Prevent injection attacks in output
+3. **Handle empty children**: Check `children.length` before rendering
+4. **Use type guards**: Verify nodes with `Tag.isTag(node)`
+5. **Recurse properly**: Always map children through your renderer
+6. **Consider performance**: Cache or memoize expensive operations
+
+## Troubleshooting
+
+### Missing content
+
+Ensure you're handling all node types:
+
+```javascript
+if (typeof node === 'string') return escapeString(node);
+if (typeof node === 'number') return String(node);
+if (Array.isArray(node)) return node.map(render);
+if (!Tag.isTag(node)) return '';
+```
+
+### Incorrect nesting
+
+Always recursively render children:
+
+```javascript
+const renderedChildren = children.map(child => render(child));
+```
+
+### Component not found
+
+In React, check your component mapping:
+
+```jsx
+const components = {
+  MyComponent // Make sure it's exported/imported correctly
+};
+```
+
+## Advanced: Async Rendering
+
+For renderers that need async operations:
+
+```javascript
+async function asyncRenderer(node) {
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) {
+    return Promise.all(node.map(asyncRenderer)).then(results => results.join(''));
+  }
+  if (!Tag.isTag(node)) return '';
+  
+  const { name, attributes, children } = node;
+  
+  // Async operation
+  const enhancedAttrs = await enhanceAttributes(attributes);
+  const renderedChildren = await Promise.all(
+    children.map(asyncRenderer)
+  );
+  
+  return renderElement(name, enhancedAttrs, renderedChildren);
+}
+```
+
+## Next Steps
+
+- Learn about [React Integration](/guides/react-integration) for React-specific rendering
+- Explore [Custom Tags](/guides/custom-tags) to control what gets rendered
+- See [Custom Nodes](/guides/custom-nodes) to modify the transformation step

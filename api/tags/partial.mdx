@@ -1,0 +1,231 @@
+---
+title: Partial tag
+description: Reuse content by including partial Markdoc documents
+---
+
+# Partial tag
+
+The `{% partial %}` tag allows you to include and reuse Markdoc content from external files. Partials are useful for maintaining reusable content blocks, shared sections, and modular documentation.
+
+## Usage
+
+### Basic partial inclusion
+
+```markdoc
+{% partial file="shared/header.md" /%}
+```
+
+### Partial with variables
+
+```markdoc
+{% partial 
+   file="components/api-endpoint.md" 
+   variables={method: "GET", path: "/api/users"} /%}
+```
+
+## Attributes
+
+<ParamField path="file" type="PartialFile" required>
+  The name/path of the partial file registered in `config.partials`
+</ParamField>
+
+<ParamField path="variables" type="Object">
+  Variables to pass to the partial (merged with config.variables)
+</ParamField>
+
+## Configuration
+
+Partials must be registered in your Markdoc configuration:
+
+```javascript
+const config = {
+  partials: {
+    'header.md': parseMarkdoc(headerContent),
+    'footer.md': parseMarkdoc(footerContent),
+    'api-endpoint.md': parseMarkdoc(endpointTemplate)
+  }
+};
+```
+
+## Variable scope
+
+When a partial is rendered:
+
+1. It inherits all variables from the parent config
+2. Variables passed via the `variables` attribute are merged in
+3. A special variable `$$partial:filename` is automatically added with the partial's file name
+
+```markdoc
+{% partial file="example.md" variables={title: "Hello"} /%}
+```
+
+Inside `example.md`, you can access:
+- `$title` - The passed variable ("Hello")
+- `$$partial:filename` - The partial's filename ("example.md")
+- Any parent config variables
+
+## Common patterns
+
+### Reusable content blocks
+
+```markdoc
+# Getting Started
+
+{% partial file="shared/prerequisites.md" /%}
+
+## Installation
+
+{% partial file="shared/install-instructions.md" 
+   variables={package: "@markdoc/core"} /%}
+```
+
+### Template-based content
+
+```markdoc
+{% partial 
+   file="templates/endpoint.md"
+   variables={
+     method: "POST",
+     path: "/api/users",
+     description: "Create a new user"
+   } /%}
+```
+
+### Conditional partials
+
+```markdoc
+{% if $platform == "web" %}
+  {% partial file="web-instructions.md" /%}
+{% else /%}
+  {% partial file="mobile-instructions.md" /%}
+{% /if %}
+```
+
+### Nested partials
+
+Partials can include other partials:
+
+```markdoc
+<!-- In main.md -->
+{% partial file="section.md" /%}
+
+<!-- In section.md -->
+# Section Title
+{% partial file="subsection.md" /%}
+```
+
+## Schema definition
+
+```typescript
+{
+  inline: false,
+  selfClosing: true,
+  attributes: {
+    file: { type: PartialFile, render: false, required: true },
+    variables: { type: Object, render: false }
+  },
+  transform(node, config) {
+    const { partials = {} } = config;
+    const { file, variables } = node.attributes;
+    const partial = partials[file];
+
+    if (!partial) return null;
+
+    const scopedConfig = {
+      ...config,
+      variables: {
+        ...config.variables,
+        ...variables,
+        ['$$partial:filename']: file
+      }
+    };
+
+    return Array.isArray(partial)
+      ? partial.flatMap(p => p.resolve(scopedConfig).transformChildren(scopedConfig))
+      : partial.resolve(scopedConfig).transformChildren(scopedConfig);
+  }
+}
+```
+
+## Validation
+
+The partial tag validates that the specified file exists in the configuration:
+
+### Missing partial error
+
+If you reference a partial that isn't registered:
+
+```markdoc
+{% partial file="non-existent.md" /%}
+```
+
+You'll receive a validation error:
+
+```
+Partial `non-existent.md` not found. 
+The 'file' attribute must be set in `config.partials`
+```
+
+### Required attribute error
+
+The `file` attribute is required:
+
+```markdoc
+{% partial /%}  ✗ Error: 'file' attribute required
+```
+
+## Behavior details
+
+### Block-level tag
+
+The partial tag is **not inline** (`inline: false`), meaning it creates a block-level element.
+
+### Self-closing
+
+The partial tag is **self-closing** and cannot have children:
+
+```markdoc
+{% partial file="example.md" /%}  ✓ Correct
+
+{% partial file="example.md" %}
+  Content here
+{% /partial %}                    ✗ Invalid
+```
+
+### Transform behavior
+
+During transformation:
+1. The partial content is retrieved from `config.partials`
+2. A new scoped configuration is created with merged variables
+3. The partial is resolved and its children are transformed with the scoped config
+4. If the partial is an array, all items are processed and flattened
+5. If the partial is not found, `null` is returned (no output)
+
+## Edge cases
+
+### Array partials
+
+Partials can be arrays of nodes. Each node is processed and flattened:
+
+```javascript
+config.partials = {
+  'multi.md': [
+    parseMarkdoc('# First section'),
+    parseMarkdoc('# Second section')
+  ]
+};
+```
+
+### Variable precedence
+
+Variables are merged in this order (later overrides earlier):
+1. Parent config.variables
+2. Partial variables attribute
+3. $$partial:filename (always added)
+
+### Missing partials
+
+If a partial is not found:
+- Validation returns an error
+- Transform returns `null` (no content rendered)
+- No exception is thrown during rendering

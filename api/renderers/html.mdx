@@ -1,0 +1,361 @@
+---
+title: HTML renderer
+description: Render Markdoc content as HTML strings
+---
+
+The HTML renderer converts a Markdoc render tree into an HTML string. This is useful for server-side rendering, static site generation, or any scenario where you need HTML output.
+
+## Installation
+
+```bash
+npm install @markdoc/markdoc
+```
+
+## Basic usage
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `# Hello world`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(content);
+
+console.log(html); // <h1>Hello world</h1>
+```
+
+## API
+
+### `Markdoc.renderers.html(node)`
+
+Converts a Markdoc render tree into an HTML string.
+
+#### Parameters
+
+- `node` (RenderableTreeNodes): The render tree node(s) to convert. This is typically the output from `Markdoc.transform()`.
+
+#### Returns
+
+- `string`: The rendered HTML string.
+
+## Type definitions
+
+### RenderableTreeNodes
+
+The input type accepted by the renderer:
+
+```typescript
+type RenderableTreeNode = Tag | Scalar;
+type RenderableTreeNodes = RenderableTreeNode | RenderableTreeNode[];
+
+type Scalar = null | boolean | number | string | Scalar[] | { [key: string]: Scalar };
+```
+
+### Tag
+
+A Tag represents an element in the render tree:
+
+```typescript
+class Tag {
+  name: string;
+  attributes: Record<string, any>;
+  children: RenderableTreeNode[];
+}
+```
+
+## Features
+
+### Automatic HTML escaping
+
+The HTML renderer automatically escapes text content and attribute values to prevent XSS attacks:
+
+```javascript
+const doc = `<script>alert('XSS')</script>`;
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(content);
+
+// Output: <p>&lt;script&gt;alert('XSS')&lt;/script&gt;</p>
+```
+
+### Void elements
+
+The renderer correctly handles void elements (self-closing tags) according to the HTML specification:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const tag = new Tag('hr');
+const html = Markdoc.renderers.html(tag);
+
+console.log(html); // <hr>
+```
+
+Void elements supported:
+- `area`
+- `base`
+- `br`
+- `col`
+- `embed`
+- `hr`
+- `img`
+- `input`
+- `link`
+- `meta`
+- `param`
+- `source`
+- `track`
+- `wbr`
+
+### Attribute handling
+
+#### Lowercase conversion
+
+All attributes are automatically converted to lowercase for HTML compatibility:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const tag = new Tag('td', { colSpan: 2, rowSpan: 3 }, ['Data']);
+const html = Markdoc.renderers.html(tag);
+
+console.log(html); // <td colspan="2" rowspan="3">Data</td>
+```
+
+#### Numeric attributes
+
+Numeric attribute values are automatically converted to strings:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const tag = new Tag('div', { 'data-count': 42 }, ['content']);
+const html = Markdoc.renderers.html(tag);
+
+console.log(html); // <div data-count="42">content</div>
+```
+
+### Rendering arrays
+
+You can render multiple nodes at once by passing an array:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const nodes = [
+  new Tag('p', {}, ['First paragraph']),
+  new Tag('p', {}, ['Second paragraph'])
+];
+
+const html = Markdoc.renderers.html(nodes);
+console.log(html); // <p>First paragraph</p><p>Second paragraph</p>
+```
+
+### Nested tags
+
+The renderer handles nested tags recursively:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const nested = new Tag('div', { class: 'container' }, [
+  new Tag('h1', {}, ['Title']),
+  new Tag('p', {}, ['Content'])
+]);
+
+const html = Markdoc.renderers.html(nested);
+// Output:
+// <div class="container"><h1>Title</h1><p>Content</p></div>
+```
+
+### Invalid children
+
+Non-renderable children (objects that are not Tags) are skipped:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const tag = new Tag('div', {}, ['text', { foo: 'bar' }, 'more text']);
+const html = Markdoc.renderers.html(tag);
+
+console.log(html); // <div>textmore text</div>
+```
+
+## Examples
+
+### Basic document rendering
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const source = `
+# Getting Started
+
+Welcome to **Markdoc**!
+
+## Installation
+
+\`\`\`bash
+npm install @markdoc/markdoc
+\`\`\`
+`;
+
+const ast = Markdoc.parse(source);
+const content = Markdoc.transform(ast);
+const html = Markdoc.renderers.html(content);
+```
+
+### With custom tags
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const source = `
+{% callout type="warning" %}
+Be careful with this operation!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(source);
+
+const config = {
+  tags: {
+    callout: {
+      render: 'div',
+      attributes: {
+        type: { type: String }
+      },
+      transform(node, config) {
+        const attributes = node.transformAttributes(config);
+        const children = node.transformChildren(config);
+        
+        return new Markdoc.Tag(
+          'div',
+          { class: `callout callout-${attributes.type}` },
+          children
+        );
+      }
+    }
+  }
+};
+
+const content = Markdoc.transform(ast, config);
+const html = Markdoc.renderers.html(content);
+
+// Output: <div class="callout callout-warning">Be careful with this operation!</div>
+```
+
+### Server-side rendering
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import express from 'express';
+
+const app = express();
+
+app.get('/page/:slug', async (req, res) => {
+  // Fetch your Markdoc content from database/filesystem
+  const source = await getMarkdocContent(req.params.slug);
+  
+  const ast = Markdoc.parse(source);
+  const content = Markdoc.transform(ast);
+  const html = Markdoc.renderers.html(content);
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head><title>Page</title></head>
+      <body>
+        <article>
+          ${html}
+        </article>
+      </body>
+    </html>
+  `);
+});
+```
+
+### Static site generation
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import fs from 'fs/promises';
+import path from 'path';
+
+async function generateStaticPages() {
+  const sourceDir = './content';
+  const outputDir = './dist';
+  
+  const files = await fs.readdir(sourceDir);
+  
+  for (const file of files) {
+    if (!file.endsWith('.md')) continue;
+    
+    const source = await fs.readFile(
+      path.join(sourceDir, file),
+      'utf-8'
+    );
+    
+    const ast = Markdoc.parse(source);
+    const content = Markdoc.transform(ast);
+    const html = Markdoc.renderers.html(content);
+    
+    const htmlPage = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Page</title>
+        </head>
+        <body>
+          ${html}
+        </body>
+      </html>
+    `;
+    
+    const outputFile = file.replace('.md', '.html');
+    await fs.writeFile(
+      path.join(outputDir, outputFile),
+      htmlPage
+    );
+  }
+}
+
+generateStaticPages();
+```
+
+## HTML vs React renderer
+
+Choose the HTML renderer when:
+- You need server-side rendering without React
+- You're generating static HTML files
+- You're building a non-React application
+- You want the simplest rendering solution
+
+Choose the React renderer when:
+- You're building a React application
+- You need interactive components
+- You want to leverage React's virtual DOM
+- You need client-side interactivity
+
+See [React renderer](/api/renderers/react) for React-specific rendering.
+
+## Performance considerations
+
+The HTML renderer is highly performant because:
+- It generates strings directly without virtual DOM overhead
+- It escapes content using markdown-it's efficient escapeHtml utility
+- It handles void elements without additional checks for closing tags
+- It processes nodes recursively in a single pass
+
+For high-traffic scenarios, consider:
+- Caching rendered HTML output
+- Pre-rendering content at build time
+- Using a CDN to serve static HTML
+
+## Next steps
+
+- Learn about [React rendering](/api/renderers/react)
+- Explore [custom tags](/docs/tags)
+- Read about [transforms](/docs/transform)

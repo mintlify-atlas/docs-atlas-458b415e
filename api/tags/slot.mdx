@@ -1,0 +1,279 @@
+---
+title: Slot tag
+description: Define named slots for content projection in custom tags
+---
+
+# Slot tag
+
+The `{% slot %}` tag provides a mechanism for content projection, allowing custom tags to define named slots where content can be inserted. This enables flexible, component-like behavior in Markdoc.
+
+## Usage
+
+### Basic slot
+
+```markdoc
+{% slot "header" /%}
+```
+
+### Named slots in custom tags
+
+When creating custom tags, slots allow you to define where child content should be rendered:
+
+```markdoc
+{% card %}
+  {% slot "title" /%}
+  {% slot "content" /%}
+  {% slot "footer" /%}
+{% /card %}
+```
+
+## Attributes
+
+<ParamField path="primary" type="String" required>
+  The name of the slot to render
+</ParamField>
+
+## How slots work
+
+Slots enable a parent-child content projection pattern:
+
+1. A custom tag defines available slots using `{% slot %}`
+2. When the tag is used, content can be assigned to specific slots
+3. During rendering, slot tags are replaced with their corresponding content
+
+## Schema definition
+
+```typescript
+{
+  attributes: {
+    primary: { type: String, required: true }
+  }
+}
+```
+
+## Common patterns
+
+### Card component with slots
+
+Define a custom card tag that uses slots:
+
+```javascript
+// In your schema config
+const card = {
+  render: 'Card',
+  children: ['slot'],
+  slots: {
+    title: {},
+    content: {},
+    footer: {}
+  }
+};
+```
+
+Usage in Markdoc:
+```markdoc
+{% card %}
+  {% slot "title" %}
+    Card Title
+  {% /slot %}
+  
+  {% slot "content" %}
+    This is the main content of the card.
+  {% /slot %}
+  
+  {% slot "footer" %}
+    Footer content
+  {% /slot %}
+{% /card %}
+```
+
+### Tab component with slots
+
+```markdoc
+{% tabs %}
+  {% slot "tab-1" %}
+    Content for first tab
+  {% /slot %}
+  
+  {% slot "tab-2" %}
+    Content for second tab
+  {% /slot %}
+{% /tabs %}
+```
+
+### Layout with slots
+
+```markdoc
+{% layout %}
+  {% slot "sidebar" %}
+    Navigation menu
+  {% /slot %}
+  
+  {% slot "main" %}
+    Main content area
+  {% /slot %}
+{% /layout %}
+```
+
+## Integration with custom tags
+
+To use slots in your custom tags, you need to:
+
+1. **Define slot names** in your tag schema
+2. **Process slot content** in your render component
+3. **Place slot tags** in your tag template
+
+### Example: Custom callout with icon slot
+
+```javascript
+// Tag schema
+const callout = {
+  render: 'Callout',
+  attributes: {
+    type: { type: String }
+  },
+  slots: {
+    icon: {},
+    content: {}
+  }
+};
+```
+
+Markdoc usage:
+```markdoc
+{% callout type="info" %}
+  {% slot "icon" %}
+    ℹ️
+  {% /slot %}
+  
+  {% slot "content" %}
+    This is an informational message.
+  {% /slot %}
+{% /callout %}
+```
+
+## Slot behavior
+
+### Required attribute
+
+The slot name (primary attribute) is **required**. Without it, validation will fail:
+
+```markdoc
+{% slot /%}                    ✗ Error: primary attribute required
+{% slot "header" /%}          ✓ Valid
+```
+
+### String type
+
+Slot names must be strings:
+
+```markdoc
+{% slot "header" /%}          ✓ String slot name
+{% slot 123 /%}                ✗ Invalid: not a string
+```
+
+### Self-closing vs. with content
+
+Slots can be used both ways depending on your implementation:
+
+```markdoc
+{% slot "name" /%}            Self-closing
+
+{% slot "name" %}
+  Content here
+{% /slot %}                    With content
+```
+
+## Advanced patterns
+
+### Default slot content
+
+You can define default content for slots that may not always be filled:
+
+```markdoc
+{% component %}
+  {% slot "optional" %}
+    Default content if slot not provided
+  {% /slot %}
+{% /component %}
+```
+
+### Multiple unnamed slots
+
+For more complex layouts, use descriptive slot names:
+
+```markdoc
+{% dialog %}
+  {% slot "header" /%}
+  {% slot "body" /%}
+  {% slot "actions" /%}
+{% /dialog %}
+```
+
+### Conditional slots
+
+Combine slots with conditionals:
+
+```markdoc
+{% card %}
+  {% if $showHeader %}
+    {% slot "header" /%}
+  {% /if %}
+  
+  {% slot "content" /%}
+{% /card %}
+```
+
+## Implementation notes
+
+### Minimal schema
+
+The slot tag has one of the simplest schemas in Markdoc - it only requires a string primary attribute.
+
+### No transform function
+
+Unlike other tags, the slot schema doesn't define a custom transform function. The slot processing is typically handled by the parent tag's transform logic.
+
+### Render component responsibility
+
+The actual slot content projection is handled by your render components, not by the Markdoc core. Your React/Vue/other framework components receive the slot content and decide how to display it.
+
+## Comparison to other frameworks
+
+If you're familiar with other frameworks:
+
+- **Vue**: Similar to `<slot name="header">`
+- **React**: Similar to render props or children patterns
+- **Web Components**: Similar to `<slot name="header">`
+
+## Validation
+
+The slot tag validates that:
+1. The `primary` attribute is provided
+2. The value is a string
+
+Example validation error:
+```
+Attribute 'primary' is required
+```
+
+## Edge cases
+
+### Empty slot names
+
+```markdoc
+{% slot "" /%}                Empty string is technically valid
+                               but not recommended
+```
+
+### Special characters in slot names
+
+```markdoc
+{% slot "my-slot" /%}         ✓ Hyphenated names work
+{% slot "my_slot" /%}         ✓ Underscores work
+{% slot "mySlot" /%}          ✓ camelCase works
+```
+
+### Duplicate slot names
+
+What happens with duplicate slot names depends on your parent tag's implementation. Generally, the last slot wins or all instances are rendered.

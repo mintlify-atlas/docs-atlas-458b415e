@@ -1,0 +1,252 @@
+---
+title: Config
+description: The Config type defines the configuration object for customizing Markdoc behavior
+---
+
+# Config
+
+The `Config` type is the central configuration object used throughout Markdoc to customize parsing, validation, and rendering behavior. It allows you to define custom tags, nodes, variables, functions, and validation rules.
+
+## Type Definition
+
+```typescript
+type Config<R = string> = Readonly<ConfigType<R>>;
+
+type ConfigType<R = string> = Partial<{
+  nodes: Partial<Record<NodeType, Schema<ConfigType, R>>>;
+  tags: Record<string, Schema>;
+  variables: Record<string, any>;
+  functions: Record<string, ConfigFunction>;
+  partials: Record<string, any>;
+  validation?: {
+    parents?: Node[];
+    validateFunctions?: boolean;
+    environment?: string;
+  };
+}>;
+```
+
+## Properties
+
+### `nodes`
+
+**Type:** `Partial<Record<NodeType, Schema<ConfigType, R>>>`
+
+Defines custom behavior for built-in Markdown nodes. Each key is a `NodeType` (e.g., `'heading'`, `'paragraph'`, `'link'`) and the value is a [Schema](/api/types/schema) that defines how that node should be rendered or transformed.
+
+**Example:**
+
+```typescript
+const config: Config = {
+  nodes: {
+    heading: {
+      render: 'Heading',
+      attributes: {
+        level: { type: Number, required: true }
+      }
+    },
+    link: {
+      render: 'Link',
+      attributes: {
+        href: { type: String, required: true }
+      }
+    }
+  }
+};
+```
+
+### `tags`
+
+**Type:** `Record<string, Schema>`
+
+Defines custom Markdoc tags that can be used in your content. Each key is the tag name and the value is a [Schema](/api/types/schema) defining the tag's behavior, attributes, and rendering.
+
+**Example:**
+
+```typescript
+const config: Config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: {
+          type: String,
+          default: 'info',
+          matches: ['info', 'warning', 'error']
+        }
+      }
+    }
+  }
+};
+```
+
+### `variables`
+
+**Type:** `Record<string, any>`
+
+Defines variables that can be accessed in your Markdoc content using the `$variable` syntax. Variables can be any JSON-serializable value or a function that resolves variables dynamically.
+
+**Example:**
+
+```typescript
+const config: Config = {
+  variables: {
+    version: '1.0.0',
+    author: {
+      name: 'Jane Doe',
+      email: 'jane@example.com'
+    }
+  }
+};
+```
+
+In your Markdoc content:
+
+```markdown
+Current version: {% $version %}
+Author: {% $author.name %}
+```
+
+### `functions`
+
+**Type:** `Record<string, ConfigFunction>`
+
+Defines custom functions that can be called in Markdoc expressions. Each function is defined by a `ConfigFunction` object.
+
+**Example:**
+
+```typescript
+const config: Config = {
+  functions: {
+    uppercase: {
+      transform(parameters) {
+        return parameters[0].toUpperCase();
+      }
+    }
+  }
+};
+```
+
+### `partials`
+
+**Type:** `Record<string, any>`
+
+Defines reusable content partials that can be referenced in your Markdoc documents.
+
+### `validation`
+
+**Type:** `{ parents?: Node[]; validateFunctions?: boolean; environment?: string; }`
+
+Optional validation configuration that controls how Markdoc validates your content.
+
+**Properties:**
+
+- **`parents`**: An array of parent nodes used during validation to check nesting rules
+- **`validateFunctions`**: Whether to validate function calls (default: `true`)
+- **`environment`**: A string identifying the validation environment (e.g., `'production'`, `'development'`)
+
+## ConfigFunction
+
+The `ConfigFunction` type defines a custom function that can be used in Markdoc expressions.
+
+```typescript
+type ConfigFunction = {
+  returns?: ValidationType | ValidationType[];
+  parameters?: Record<string, SchemaAttribute>;
+  transform?(parameters: Record<string, any>, config: Config): any;
+  validate?(fn: Function, config: Config): ValidationError[];
+};
+```
+
+### Properties
+
+#### `returns`
+
+**Type:** `ValidationType | ValidationType[]`
+
+Specifies the expected return type(s) of the function for validation purposes.
+
+#### `parameters`
+
+**Type:** `Record<string, SchemaAttribute>`
+
+Defines the function's parameters, their types, and validation rules. Each parameter is defined using a [SchemaAttribute](/api/types/schema#schemaattribute).
+
+#### `transform`
+
+**Type:** `(parameters: Record<string, any>, config: Config) => any`
+
+The implementation of the function. Receives the resolved parameters and config, and returns the result.
+
+#### `validate`
+
+**Type:** `(fn: Function, config: Config) => ValidationError[]`
+
+Custom validation logic for the function call. Returns an array of validation errors if any.
+
+## CustomAttributeType
+
+For advanced use cases, you can define custom attribute types with their own validation and transformation logic.
+
+```typescript
+interface CustomAttributeTypeInterface {
+  transform?(value: any, config: Config): Scalar;
+  validate?(value: any, config: Config, name: string): ValidationError[];
+}
+
+interface CustomAttributeType {
+  new (): CustomAttributeTypeInterface;
+  readonly prototype: CustomAttributeTypeInterface;
+}
+```
+
+### Example
+
+```typescript
+class EmailType implements CustomAttributeTypeInterface {
+  validate(value: any, config: Config, name: string) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (typeof value !== 'string' || !emailRegex.test(value)) {
+      return [{
+        id: 'invalid-email',
+        level: 'error',
+        message: `${name} must be a valid email address`
+      }];
+    }
+    return [];
+  }
+}
+
+const config: Config = {
+  tags: {
+    contact: {
+      attributes: {
+        email: { type: EmailType }
+      }
+    }
+  }
+};
+```
+
+## Usage
+
+The `Config` object is passed to various Markdoc functions:
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const config: Config = {
+  tags: { /* ... */ },
+  variables: { /* ... */ }
+};
+
+const ast = Markdoc.parse(source);
+const content = Markdoc.transform(ast, config);
+const html = Markdoc.renderers.html(content);
+```
+
+## Related Types
+
+- [Schema](/api/types/schema) - Defines the structure and behavior of tags and nodes
+- [Node](/api/types/node) - Represents nodes in the AST
+- [Tag](/api/types/tag) - Represents rendered tags in the output tree

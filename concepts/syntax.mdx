@@ -1,0 +1,466 @@
+---
+title: 'Markdoc Syntax'
+description: 'Complete guide to Markdoc syntax including tags, attributes, variables, and functions'
+---
+
+## Overview
+
+Markdoc extends standard Markdown with a powerful syntax for tags, variables, and functions. This allows you to create dynamic, data-driven documentation while maintaining the readability of Markdown.
+
+## Standard Markdown
+
+Markdoc fully supports CommonMark Markdown syntax:
+
+```markdown
+# Headings
+
+## Level 2
+### Level 3
+
+**Bold text** and *italic text*
+
+- Bullet lists
+- Another item
+
+1. Numbered lists
+2. Second item
+
+[Links](https://example.com)
+
+![Images](path/to/image.png)
+
+`inline code`
+
+```javascript
+// Code blocks
+const example = true;
+```
+```
+
+<Note>
+Markdoc uses `markdown-it` as its tokenizer, ensuring compatibility with the CommonMark specification.
+</Note>
+
+## Tags
+
+Tags are Markdoc's extension mechanism, using `{% %}` delimiters:
+
+### Basic Tag Syntax
+
+```markdown
+{% tagname /%}
+```
+
+### Tags with Content
+
+```markdown
+{% tagname %}
+Content goes here
+{% /tagname %}
+```
+
+### Primary Attribute
+
+The first value after the tag name is the "primary" attribute:
+
+```markdown
+{% if $showContent %}
+This content is conditional
+{% /if %}
+```
+
+From the grammar (`src/grammar/tag.pegjs:19-33`):
+
+```pegjs
+TagOpen =
+  tag:TagName _*
+  primary:(
+    value:Value _? { return value; }
+  )?
+  attributes:TagAttributes? _*
+  close:'/'? {
+    if (primary) {
+      attributes = attributes || [];
+      attributes.unshift({type: 'attribute', name: 'primary', value: primary});
+    }
+    // ...
+  }
+```
+
+### Named Attributes
+
+Tags can have multiple named attributes:
+
+```markdown
+{% image src="/logo.png" alt="Logo" width="200" /%}
+```
+
+### Shortcut Syntax
+
+Markdoc provides shortcuts for common attributes:
+
+#### ID Shortcut
+
+```markdown
+{% callout #my-id /%}
+```
+
+Equivalent to:
+```markdown
+{% callout id="my-id" /%}
+```
+
+#### Class Shortcut
+
+```markdown
+{% callout .warning .large /%}
+```
+
+From the grammar (`src/grammar/tag.pegjs:55-59`):
+
+```pegjs
+TagShortcutClass 'class' =
+  '.'
+  name:Identifier {
+    return {type: 'class', name, value: true};
+  }
+```
+
+### Self-Closing vs. Paired Tags
+
+Self-closing tag:
+```markdown
+{% image src="/logo.png" /%}
+```
+
+Paired tag:
+```markdown
+{% callout %}
+Important information here
+{% /callout %}
+```
+
+<Tip>
+The `/` at the end indicates a self-closing tag. Without it, you must provide a closing tag.
+</Tip>
+
+## Variables
+
+Variables allow you to inject dynamic data into your content:
+
+### Variable Syntax
+
+Variables use the `$` prefix:
+
+```markdown
+Hello $name!
+
+Version: $version
+```
+
+### Nested Variables
+
+Access nested properties with dot notation:
+
+```markdown
+$user.name
+$config.settings.theme
+```
+
+From the Variable class (`src/ast/variable.ts:12-16`):
+
+```typescript
+resolve({ variables }: Config = {}) {
+  return variables instanceof Function
+    ? variables(this.path)
+    : this.path.reduce((obj = {}, key) => obj[key], variables);
+}
+```
+
+### Array Access
+
+Access array elements:
+
+```markdown
+$items[0]
+$users[5].name
+```
+
+The grammar supports both dot and bracket notation (`src/grammar/tag.pegjs:109-111`):
+
+```pegjs
+VariableTail =
+  '.' name:Identifier { return name; } /
+  '[' value:(ValueNumber / ValueString) ']' { return value; }
+```
+
+### Variable Resolution
+
+Variables are resolved during the transform phase:
+
+```javascript
+const config = {
+  variables: {
+    name: 'World',
+    version: '1.0.0',
+    user: {
+      name: 'Alice',
+      role: 'Admin'
+    }
+  }
+};
+
+const doc = Markdoc.parse('Hello $name!');
+const content = Markdoc.transform(doc, config);
+// Result: 'Hello World!'
+```
+
+## Functions
+
+Functions allow you to compute values dynamically:
+
+### Function Syntax
+
+```markdown
+{% if equals($status, "active") %}
+Account is active
+{% /if %}
+```
+
+### Positional Parameters
+
+```markdown
+{% tag equals($a, $b, $c) /%}
+```
+
+### Named Parameters
+
+```markdown
+{% tag value=uppercase(name=$user.name) /%}
+```
+
+From the grammar (`src/grammar/tag.pegjs:74-85`):
+
+```pegjs
+Function =
+  name:Identifier '(' _*
+  params:(
+    head:FunctionParameter?
+    tail:FunctionParameterTail* { return head ? [head, ...tail] : []; }
+  )?
+  ')' {
+    let parameters = {};
+    for (let [index, {name, value}] of params.entries())
+      parameters[name || index] = value;
+    return new Function(name, parameters);
+  }
+```
+
+### Built-in Functions
+
+Markdoc includes utility functions in `src/functions/index.ts`. Functions are resolved during transformation:
+
+```typescript
+// From ast/function.ts:15-21
+resolve(config: Config = {}) {
+  const fn = config?.functions?.[this.name];
+  if (!fn) return null;
+
+  const parameters = resolve(this.parameters, config);
+  return fn.transform?.(parameters, config);
+}
+```
+
+## Annotations
+
+Annotations allow you to add attributes to existing Markdown elements:
+
+```markdown
+# Heading {% #custom-id .large-heading %}
+
+Paragraph with styling {% .highlight %}
+
+![Image](/path.png) {% width="500" %}
+```
+
+From the parser (`src/parser.ts:17-34`):
+
+```typescript
+function annotate(node: Node, attributes: AttributeValue[]) {
+  for (const attribute of attributes) {
+    node.annotations.push(attribute);
+
+    const { name, value, type } = attribute;
+    if (type === 'attribute') {
+      if (node.attributes[name] !== undefined)
+        node.errors.push({
+          id: 'duplicate-attribute',
+          level: 'warning',
+          message: `Attribute '${name}' already set`,
+        });
+      node.attributes[name] = value;
+    } else if (type === 'class')
+      if (node.attributes.class) node.attributes.class[name] = value;
+      else node.attributes.class = { [name]: value };
+  }
+}
+```
+
+<Warning>
+Annotations must immediately follow the element they're annotating, on the same line or the next line.
+</Warning>
+
+## Value Types
+
+Markdoc supports several value types in attributes and function parameters:
+
+### Strings
+
+```markdown
+{% tag value="hello" /%}
+```
+
+### Numbers
+
+```markdown
+{% tag count=42 price=19.99 /%}
+```
+
+### Booleans
+
+```markdown
+{% tag active=true disabled=false /%}
+```
+
+### Null
+
+```markdown
+{% tag value=null /%}
+```
+
+### Arrays
+
+```markdown
+{% tag items=[1, 2, 3] /%}
+{% tag names=["Alice", "Bob"] /%}
+```
+
+### Objects
+
+```markdown
+{% tag config={theme: "dark", size: "large"} /%}
+```
+
+From the grammar (`src/grammar/tag.pegjs:113-117`):
+
+```pegjs
+Value =
+  ValueNull / ValueBoolean /
+  ValueString / ValueNumber /
+  ValueArray / ValueHash /
+  Function / Variable
+```
+
+## Frontmatter
+
+Markdoc supports YAML frontmatter at the document start:
+
+```markdown
+---
+title: My Document
+author: Jane Doe
+tags: [docs, tutorial]
+---
+
+# Document content starts here
+```
+
+Frontmatter is parsed and stored in the document node's attributes:
+
+```typescript
+// From parser.ts:107-110
+if (token.type === 'frontmatter') {
+  nodes[0].attributes.frontmatter = token.content;
+  return;
+}
+```
+
+<Tip>
+Access frontmatter in your schemas via `node.attributes.frontmatter`.
+</Tip>
+
+## Comments
+
+HTML-style comments are supported:
+
+```markdown
+<!-- This is a comment -->
+
+<!-- 
+  Multi-line comment
+  spanning several lines
+-->
+```
+
+Comments must be explicitly enabled:
+
+```typescript
+const tokenizer = new Tokenizer({ allowComments: true });
+```
+
+## Escaping
+
+To include literal tag syntax in your content, use code blocks or inline code:
+
+```markdown
+To create a tag, write `{% tagname /%}`
+
+Example:
+{% tagname /%}
+```
+
+## Complete Example
+
+Here's a comprehensive example combining multiple syntax features:
+
+```markdown
+---
+title: API Reference
+version: 2.0
+---
+
+# API Reference {% #api-reference %}
+
+{% if $showBeta %}
+{% callout .warning %}
+This is a beta feature for version $version
+{% /callout %}
+{% /if %}
+
+## Authentication
+
+Use the `$config.apiKey` in your requests.
+
+{% table %}
+* Header
+* Value
+---
+* Authorization
+* Bearer {% if $token %}$token{% else %}YOUR_TOKEN{% /if %}
+{% /table %}
+
+{% partial file="examples/auth.md" /%}
+
+<!-- Internal note: Update this section quarterly -->
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema" icon="file-contract" href="/concepts/schema">
+    Learn how schemas validate and transform syntax
+  </Card>
+  <Card title="Tags" icon="tag" href="/concepts/tags">
+    Create custom tags for your documentation
+  </Card>
+</CardGroup>

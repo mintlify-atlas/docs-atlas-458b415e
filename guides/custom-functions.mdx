@@ -1,0 +1,634 @@
+---
+title: Custom Functions
+description: Create custom functions to add dynamic logic and computations to your Markdoc content
+---
+
+# Custom Functions
+
+Functions in Markdoc allow you to compute values dynamically in your content. They can be used in tag attributes, variables, and anywhere expressions are accepted.
+
+## Overview
+
+Functions enable:
+- Dynamic attribute values
+- Conditional logic
+- Data transformations
+- Computations and formatting
+- Type-safe parameter validation
+
+## Function Syntax
+
+Functions are called using the `$` prefix:
+
+```markdown
+{% if $equals(user.role, "admin") %}
+Admin content here
+{% /if %}
+
+{% button disabled=$not($truthy(user.canEdit)) %}
+Edit
+{% /button %}
+```
+
+## Built-in Functions
+
+Markdoc includes these built-in functions:
+
+### and
+
+Returns true if all parameters are truthy:
+
+```markdown
+{% if $and(user.isLoggedIn, user.hasPermission) %}
+Protected content
+{% /if %}
+```
+
+Implementation:
+
+```javascript
+const and = {
+  transform(parameters) {
+    return Object.values(parameters).every((x) => truthy(x));
+  }
+};
+```
+
+### or
+
+Returns true if any parameter is truthy:
+
+```markdown
+{% if $or(user.isAdmin, user.isModerator) %}
+Moderation tools
+{% /if %}
+```
+
+Implementation:
+
+```javascript
+const or = {
+  transform(parameters) {
+    return Object.values(parameters).find((x) => truthy(x)) !== undefined;
+  }
+};
+```
+
+### not
+
+Inverts a boolean value:
+
+```markdown
+{% if $not(user.isBanned) %}
+Welcome!
+{% /if %}
+```
+
+Implementation:
+
+```javascript
+const not = {
+  parameters: {
+    0: { required: true }
+  },
+  transform(parameters) {
+    return !truthy(parameters[0]);
+  }
+};
+```
+
+### equals
+
+Checks if all parameters are equal:
+
+```markdown
+{% if $equals(user.role, "admin") %}
+Admin panel
+{% /if %}
+
+{% if $equals(a, b, c) %}
+All three are equal
+{% /if %}
+```
+
+Implementation:
+
+```javascript
+const equals = {
+  transform(parameters) {
+    const values = Object.values(parameters);
+    return values.every((v) => v === values[0]);
+  }
+};
+```
+
+### default
+
+Returns the first parameter unless undefined, then returns the second:
+
+```markdown
+{% heading level=$default(customLevel, 2) %}
+Title
+{% /heading %}
+```
+
+Implementation:
+
+```javascript
+const defaultFn = {
+  transform(parameters) {
+    return parameters[0] === undefined ? parameters[1] : parameters[0];
+  }
+};
+```
+
+### debug
+
+Returns a JSON string representation of the parameter:
+
+```markdown
+{% code language="json" %}
+$debug(user)
+{% /code %}
+```
+
+Implementation:
+
+```javascript
+const debug = {
+  transform(parameters) {
+    return JSON.stringify(parameters[0], null, 2);
+  }
+};
+```
+
+## Creating Custom Functions
+
+<Steps>
+
+### Step 1: Define the function
+
+Create a function object with a `transform` method:
+
+```javascript
+const uppercase = {
+  transform(parameters) {
+    const value = parameters[0];
+    return typeof value === 'string' ? value.toUpperCase() : value;
+  }
+};
+```
+
+### Step 2: Add parameter validation
+
+Define expected parameters:
+
+```javascript
+const uppercase = {
+  parameters: {
+    0: {
+      type: String,
+      required: true
+    }
+  },
+  transform(parameters) {
+    return parameters[0].toUpperCase();
+  }
+};
+```
+
+### Step 3: Register the function
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  functions: {
+    uppercase
+  }
+};
+```
+
+### Step 4: Use in content
+
+```markdown
+{% heading level=1 %}
+$uppercase(title)
+{% /heading %}
+```
+
+</Steps>
+
+## Function Schema
+
+A complete function definition:
+
+```javascript
+const myFunction = {
+  // Parameter definitions
+  parameters: {
+    // Positional parameters (0, 1, 2, ...)
+    0: {
+      type: String,
+      required: true,
+      description: 'The input value'
+    },
+    1: {
+      type: Number,
+      required: false,
+      description: 'Optional multiplier'
+    },
+    // Named parameters
+    format: {
+      type: String,
+      required: false
+    }
+  },
+  
+  // Return type (for validation)
+  returns: String,
+  // Or multiple possible types
+  // returns: [String, Number],
+  
+  // Transform function
+  transform(parameters, config) {
+    // Access parameters
+    const input = parameters[0];
+    const multiplier = parameters[1] || 1;
+    const format = parameters.format;
+    
+    // Perform computation
+    return input.repeat(multiplier);
+  },
+  
+  // Custom validation (optional)
+  validate(fn, config) {
+    const errors = [];
+    // Add custom validation logic
+    return errors;
+  }
+};
+```
+
+## Real-World Examples
+
+### String Formatting
+
+```javascript
+const formatDate = {
+  parameters: {
+    0: { type: String, required: true },
+    format: {
+      type: String,
+      default: 'YYYY-MM-DD'
+    }
+  },
+  returns: String,
+  transform(parameters) {
+    const date = new Date(parameters[0]);
+    const format = parameters.format || 'YYYY-MM-DD';
+    
+    // Simple formatting (in production, use a library)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    return format
+      .replace('YYYY', year)
+      .replace('MM', month)
+      .replace('DD', day);
+  }
+};
+```
+
+Usage:
+
+```markdown
+Published: $formatDate(article.publishedAt, format="MM/DD/YYYY")
+```
+
+### Math Operations
+
+```javascript
+const multiply = {
+  parameters: {
+    0: { type: Number, required: true },
+    1: { type: Number, required: true }
+  },
+  returns: Number,
+  transform(parameters) {
+    return parameters[0] * parameters[1];
+  }
+};
+
+const round = {
+  parameters: {
+    0: { type: Number, required: true },
+    precision: { type: Number, default: 0 }
+  },
+  returns: Number,
+  transform(parameters) {
+    const precision = parameters.precision || 0;
+    const multiplier = Math.pow(10, precision);
+    return Math.round(parameters[0] * multiplier) / multiplier;
+  }
+};
+```
+
+### Array Operations
+
+```javascript
+const join = {
+  parameters: {
+    0: { type: Array, required: true },
+    separator: { type: String, default: ', ' }
+  },
+  returns: String,
+  transform(parameters) {
+    const array = parameters[0];
+    const separator = parameters.separator || ', ';
+    return array.join(separator);
+  }
+};
+
+const length = {
+  parameters: {
+    0: { type: Array, required: true }
+  },
+  returns: Number,
+  transform(parameters) {
+    return parameters[0].length;
+  }
+};
+
+const includes = {
+  parameters: {
+    0: { type: Array, required: true },
+    1: { required: true }
+  },
+  returns: Boolean,
+  transform(parameters) {
+    return parameters[0].includes(parameters[1]);
+  }
+};
+```
+
+Usage:
+
+```markdown
+Tags: $join(article.tags, separator=" • ")
+
+{% if $includes(user.permissions, "admin") %}
+Admin access granted
+{% /if %}
+```
+
+### Conditional Logic
+
+```javascript
+const ternary = {
+  parameters: {
+    0: { type: Boolean, required: true },
+    1: { required: true },
+    2: { required: true }
+  },
+  transform(parameters) {
+    return parameters[0] ? parameters[1] : parameters[2];
+  }
+};
+```
+
+Usage:
+
+```markdown
+{% badge variant=$ternary(user.isPremium, "gold", "silver") %}
+{{ $ternary(user.isPremium, "Premium", "Free") }}
+{% /badge %}
+```
+
+### Type Checking
+
+```javascript
+const isDefined = {
+  parameters: {
+    0: { required: true }
+  },
+  returns: Boolean,
+  transform(parameters) {
+    return parameters[0] !== undefined && parameters[0] !== null;
+  }
+};
+
+const isEmpty = {
+  parameters: {
+    0: { required: true }
+  },
+  returns: Boolean,
+  transform(parameters) {
+    const value = parameters[0];
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') return value.length === 0;
+    if (Array.isArray(value)) return value.length === 0;
+    if (typeof value === 'object') return Object.keys(value).length === 0;
+    return false;
+  }
+};
+```
+
+## Accessing Config in Functions
+
+The `transform` function receives the config as a second parameter:
+
+```javascript
+const getVariable = {
+  parameters: {
+    0: { type: String, required: true }
+  },
+  transform(parameters, config) {
+    const variableName = parameters[0];
+    return config.variables?.[variableName];
+  }
+};
+```
+
+## Truthy Helper
+
+Markdoc uses a consistent `truthy` function for boolean checks:
+
+```javascript
+function truthy(value) {
+  return value !== false && value !== undefined && value !== null;
+}
+```
+
+This means:
+- `false`, `undefined`, `null` → falsy
+- `0`, `""`, `[]`, `{}` → truthy (unlike JavaScript)
+
+## Parameter Types
+
+Supported parameter types:
+
+```javascript
+parameters: {
+  stringParam: { type: String },
+  numberParam: { type: Number },
+  booleanParam: { type: Boolean },
+  objectParam: { type: Object },
+  arrayParam: { type: Array },
+  
+  // Multiple possible types
+  flexibleParam: { type: [String, Number] },
+  
+  // Positional parameters
+  0: { type: String, required: true },
+  1: { type: Number, required: false }
+}
+```
+
+## Return Types
+
+Specify what your function returns:
+
+```javascript
+// Single type
+returns: String
+
+// Multiple possible types
+returns: [String, Number, Boolean]
+
+// No return type validation
+// (omit the returns property)
+```
+
+## Custom Validation
+
+Add complex validation logic:
+
+```javascript
+const divide = {
+  parameters: {
+    0: { type: Number, required: true },
+    1: { type: Number, required: true }
+  },
+  returns: Number,
+  validate(fn, config) {
+    const errors = [];
+    const divisor = fn.parameters[1];
+    
+    // Check for division by zero
+    if (divisor === 0) {
+      errors.push({
+        id: 'division-by-zero',
+        level: 'error',
+        message: 'Cannot divide by zero'
+      });
+    }
+    
+    return errors;
+  },
+  transform(parameters) {
+    return parameters[0] / parameters[1];
+  }
+};
+```
+
+## Best Practices
+
+1. **Validate parameters**: Always define parameter types and requirements
+2. **Handle edge cases**: Check for null, undefined, and invalid inputs
+3. **Keep functions pure**: Avoid side effects; only transform data
+4. **Use descriptive names**: Function names should clearly indicate their purpose
+5. **Document parameters**: Add descriptions to help users
+6. **Specify return types**: This enables better validation
+
+## Common Patterns
+
+### Guard Against Undefined
+
+```javascript
+transform(parameters) {
+  const value = parameters[0];
+  if (value === undefined || value === null) {
+    return parameters[1]; // Default value
+  }
+  return processValue(value);
+}
+```
+
+### Type Coercion
+
+```javascript
+transform(parameters) {
+  const value = parameters[0];
+  // Ensure we have a string
+  return String(value);
+}
+```
+
+### Chaining Functions
+
+```markdown
+{% if $and($isDefined(user.email), $includes(user.roles, "verified")) %}
+Verified user with email
+{% /if %}
+```
+
+## Troubleshooting
+
+### Function not found
+
+Ensure the function is registered:
+
+```javascript
+const config = {
+  functions: {
+    myFunction // Add it here
+  }
+};
+```
+
+### Parameter validation errors
+
+Check that:
+- Required parameters are provided
+- Parameter types match
+- Parameter names are correct (case-sensitive)
+
+### Return type mismatch
+
+If you get type validation errors, ensure your function returns the declared type:
+
+```javascript
+const myFunction = {
+  returns: String,
+  transform(parameters) {
+    // Must return a string!
+    return String(parameters[0]);
+  }
+};
+```
+
+## Advanced: Async Functions
+
+Functions can return promises for async operations:
+
+```javascript
+const fetchData = {
+  parameters: {
+    url: { type: String, required: true }
+  },
+  async transform(parameters) {
+    const response = await fetch(parameters.url);
+    return response.json();
+  }
+};
+```
+
+Note: This requires proper handling in your rendering pipeline.
+
+## Next Steps
+
+- Learn about [Validation](/guides/validation) to understand function validation
+- Explore [Custom Tags](/guides/custom-tags) to use functions in tag attributes
+- See [React Integration](/guides/react-integration) for using functions in React components

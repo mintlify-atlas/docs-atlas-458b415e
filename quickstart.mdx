@@ -1,80 +1,347 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Build your first Markdoc document in minutes
 ---
 
-## Get started in three steps
+This guide will help you create your first Markdoc document and understand the core workflow: **parse → transform → render**.
 
-Get your documentation site running locally and make your first customization.
+## The Markdoc Pipeline
 
-### Step 1: Set up your local environment
+Markdoc processes content in three steps:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Parse">
+    Convert your Markdown string into an Abstract Syntax Tree (AST)
+  </Step>
+  
+  <Step title="Transform">
+    Transform the AST into a renderable tree using your configuration
+  </Step>
+  
+  <Step title="Render">
+    Render the tree to React components or HTML strings
+  </Step>
+</Steps>
 
-### Step 2: Deploy your changes
+## Basic Example
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+Here's a complete working example showing the full pipeline:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```javascript
+import Markdoc from '@markdoc/markdoc';
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+const doc = `
+# Markdoc README
 
-### Step 3: Go live
+{% image src="/logo.svg" /%}
+`;
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+// Step 1: Parse - Convert Markdown to AST
+const ast = Markdoc.parse(doc);
 
-## Next steps
+// Step 2: Transform - Convert AST to renderable tree
+const content = Markdoc.transform(ast);
 
-Now that you have your docs running, explore these key features:
+// Step 3: Render - Output depends on your renderer choice
+```
+
+## Rendering Options
+
+### React Renderer
+
+Render your content as React components:
+
+```jsx
+import Markdoc from '@markdoc/markdoc';
+import React from 'react';
+
+const doc = `
+# Welcome to Markdoc
+
+This is a **bold** statement with _emphasis_.
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+
+// Render to React
+const reactNode = Markdoc.renderers.react(content, React);
+
+// Use in your React component
+function MyComponent() {
+  return <div>{reactNode}</div>;
+}
+```
+
+### HTML Renderer
+
+Render your content as an HTML string:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Welcome to Markdoc
+
+This is a **bold** statement with _emphasis_.
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+
+// Render to HTML string
+const html = Markdoc.renderers.html(content);
+
+console.log(html);
+// Output: <h1>Welcome to Markdoc</h1><p>This is <strong>bold</strong> statement with <em>emphasis</em>.</p>
+```
+
+## Creating Custom Tags
+
+One of Markdoc's most powerful features is the ability to define custom tags. Here's how to create a simple callout component:
+
+<Steps>
+  <Step title="Define the Tag Schema">
+    Create a schema that defines your tag's behavior
+  </Step>
+  
+  <Step title="Add Tag to Config">
+    Pass your tag definitions in the config object
+  </Step>
+  
+  <Step title="Use in Markdown">
+    Use your custom tag in your Markdoc content
+  </Step>
+</Steps>
+
+### Complete Custom Tag Example
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import Tag from '@markdoc/markdoc';
+
+// Define a custom callout tag
+const callout = {
+  render: 'Callout',
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error']
+    },
+    title: {
+      type: String
+    }
+  }
+};
+
+// Create your config
+const config = {
+  tags: {
+    callout: callout
+  }
+};
+
+// Use the tag in your content
+const doc = `
+# Documentation
+
+{% callout type="warning" title="Important" %}
+This is a warning message that will stand out!
+{% /callout %}
+`;
+
+// Process with config
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+```
+
+## Advanced: Custom Tag with Transform
+
+For more control, you can define a `transform` function that customizes how your tag is rendered:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import Tag from '@markdoc/markdoc';
+
+const heading = {
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true }
+  },
+  transform(node, config) {
+    return new Tag(
+      `h${node.attributes['level']}`,
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  }
+};
+
+const config = {
+  nodes: {
+    heading: heading
+  }
+};
+```
+
+## Working with Conditional Logic
+
+Markdoc includes built-in tags for conditional rendering:
+
+```javascript
+const doc = `
+{% if $showWarning %}
+  # Warning!
+  This content is only visible when showWarning is true.
+{% else %}
+  # All Clear
+  Everything is fine.
+{% /if %}
+`;
+
+const ast = Markdoc.parse(doc);
+
+// Transform with variables
+const content = Markdoc.transform(ast, {
+  variables: {
+    showWarning: true
+  }
+});
+```
+
+## Using the Markdoc Class
+
+For projects with consistent configuration, you can instantiate the Markdoc class:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+// Create a Markdoc instance with your config
+const markdoc = new Markdoc({
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String }
+      }
+    }
+  }
+});
+
+// Parse, transform, and validate with your config
+const ast = markdoc.parse('# Hello');
+const content = markdoc.transform(ast);
+const errors = markdoc.validate(ast);
+```
+
+## Complete React Example
+
+Here's a full example integrating Markdoc with React and custom components:
+
+```jsx
+import Markdoc from '@markdoc/markdoc';
+import React from 'react';
+
+// Define custom React component
+function Callout({ type, title, children }) {
+  return (
+    <div className={`callout callout-${type}`}>
+      {title && <h4>{title}</h4>}
+      {children}
+    </div>
+  );
+}
+
+// Configure Markdoc
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String },
+        title: { type: String }
+      }
+    }
+  }
+};
+
+// Your Markdoc content
+const doc = `
+# Getting Started
+
+{% callout type="info" title="Welcome" %}
+Thanks for using Markdoc!
+{% /callout %}
+`;
+
+// Render function
+function MarkdocRenderer() {
+  const ast = Markdoc.parse(doc);
+  const content = Markdoc.transform(ast, config);
+  
+  return Markdoc.renderers.react(content, React, {
+    components: {
+      Callout: Callout
+    }
+  });
+}
+
+export default MarkdocRenderer;
+```
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Custom Tags" icon="tag" href="/guides/custom-tags">
+    Learn how to create sophisticated custom tags
+  </Card>
+  
+  <Card title="Schema Definition" icon="file-code" href="/concepts/schema">
+    Deep dive into schema configuration
+  </Card>
+  
+  <Card title="Rendering" icon="paintbrush" href="/guides/renderers">
+    Explore rendering options and customization
+  </Card>
+  
+  <Card title="Validation" icon="check-circle" href="/guides/validation">
+    Validate your content against your schema
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="How do I parse content from a file?">
+    ```javascript
+    import { readFileSync } from 'fs';
+    import Markdoc from '@markdoc/markdoc';
+    
+    const content = readFileSync('document.md', 'utf-8');
+    const ast = Markdoc.parse(content);
+    const transformed = Markdoc.transform(ast);
+    ```
+  </Accordion>
+  
+  <Accordion title="Can I use Markdoc without React?">
+    Yes! Use the HTML renderer instead:
+    
+    ```javascript
+    const html = Markdoc.renderers.html(content);
+    ```
+  </Accordion>
+  
+  <Accordion title="How do I pass variables to my content?">
+    ```javascript
+    const config = {
+      variables: {
+        userName: 'John Doe',
+        version: '1.0.0'
+      }
+    };
+    
+    const content = Markdoc.transform(ast, config);
+    ```
+  </Accordion>
+</AccordionGroup>

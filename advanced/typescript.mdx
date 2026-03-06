@@ -1,0 +1,550 @@
+---
+title: TypeScript
+description: Advanced TypeScript usage, type definitions, and best practices for Markdoc
+---
+
+# TypeScript
+
+Markdoc is built with TypeScript and provides comprehensive type definitions for all its APIs. This guide covers advanced TypeScript usage patterns and best practices.
+
+## Type System Overview
+
+Markdoc's type system is built on a foundation of core types that represent the different stages of document processing.
+
+### Core Types
+
+The main types you'll work with:
+
+```typescript
+import type { Node, Tag, Config, Schema, ValidationError } from '@markdoc/markdoc';
+```
+
+#### Node Type
+
+The `Node` class represents parsed AST nodes:
+
+```typescript
+class Node {
+  readonly $$mdtype: 'Node';
+  type: NodeType;
+  tag?: string;
+  attributes: Record<string, any>;
+  slots: Record<string, Node>;
+  children: Node[];
+  errors: ValidationError[];
+  lines: number[];
+  inline: boolean;
+  location?: Location;
+  annotations: AttributeValue[];
+}
+```
+
+#### NodeType Union
+
+Markdoc defines all valid node types:
+
+```typescript
+type NodeType =
+  | 'blockquote'
+  | 'code'
+  | 'comment'
+  | 'document'
+  | 'em'
+  | 'error'
+  | 'fence'
+  | 'hardbreak'
+  | 'heading'
+  | 'hr'
+  | 'image'
+  | 'inline'
+  | 'item'
+  | 'link'
+  | 'list'
+  | 'node'
+  | 'paragraph'
+  | 's'
+  | 'softbreak'
+  | 'strong'
+  | 'table'
+  | 'tag'
+  | 'tbody'
+  | 'td'
+  | 'text'
+  | 'th'
+  | 'thead'
+  | 'tr';
+```
+
+### AST Types
+
+Markdoc's AST includes three special types that implement the `AstType` interface:
+
+```typescript
+interface AstType {
+  readonly $$mdtype: 'Function' | 'Node' | 'Variable';
+  resolve(config: Config): any;
+}
+```
+
+#### Variable
+
+Represents a variable reference:
+
+```typescript
+class Variable implements AstType {
+  readonly $$mdtype = 'Variable';
+  path: (string | number)[];
+  
+  constructor(path: (string | number)[] = []) {
+    this.path = path;
+  }
+  
+  resolve({ variables }: Config = {}) {
+    return variables instanceof Function
+      ? variables(this.path)
+      : this.path.reduce((obj = {}, key) => obj[key], variables);
+  }
+}
+```
+
+#### Function
+
+Represents a function call:
+
+```typescript
+class Function implements AstType {
+  readonly $$mdtype = 'Function';
+  name: string;
+  parameters: Record<string, any>;
+  
+  constructor(name: string, parameters: Record<string, any>) {
+    this.name = name;
+    this.parameters = parameters;
+  }
+  
+  resolve(config: Config = {}) {
+    const fn = config?.functions?.[this.name];
+    if (!fn) return null;
+    
+    const parameters = resolve(this.parameters, config);
+    return fn.transform?.(parameters, config);
+  }
+}
+```
+
+### Tag Type
+
+The `Tag` class represents the transformed output:
+
+```typescript
+class Tag<
+  N extends string = string,
+  A extends Record<string, any> = Record<string, any>
+> {
+  readonly $$mdtype = 'Tag' as const;
+  name: N;
+  attributes: A;
+  children: RenderableTreeNode[];
+  
+  static isTag = (tag: any): tag is Tag => {
+    return !!(tag?.$$mdtype === 'Tag');
+  };
+}
+```
+
+## Configuration Types
+
+### Config Type
+
+The `Config` type is central to Markdoc's configuration:
+
+```typescript
+type Config<R = string> = Readonly<ConfigType<R>>;
+
+type ConfigType<R = string> = Partial<{
+  nodes: Partial<Record<NodeType, Schema<ConfigType, R>>>;
+  tags: Record<string, Schema>;
+  variables: Record<string, any>;
+  functions: Record<string, ConfigFunction>;
+  partials: Record<string, any>;
+  validation?: {
+    parents?: Node[];
+    validateFunctions?: boolean;
+    environment?: string;
+  };
+}>;
+```
+
+### Schema Type
+
+Schemas define how nodes and tags behave:
+
+```typescript
+type Schema<C extends Config = Config, R = string> = {
+  render?: R;
+  children?: string[];
+  attributes?: Record<string, SchemaAttribute>;
+  slots?: Record<string, SchemaSlot>;
+  selfClosing?: boolean;
+  inline?: boolean;
+  transform?(node: Node, config: C): MaybePromise<RenderableTreeNodes>;
+  validate?(node: Node, config: C): MaybePromise<ValidationError[]>;
+  description?: string;
+};
+```
+
+### SchemaAttribute Type
+
+Attribute definitions with validation:
+
+```typescript
+type SchemaAttribute = {
+  type?: ValidationType | ValidationType[];
+  render?: boolean | string;
+  default?: any;
+  required?: boolean;
+  matches?: SchemaMatches | ((config: Config) => SchemaMatches);
+  validate?(value: any, config: Config, name: string): ValidationError[];
+  errorLevel?: ValidationError['level'];
+  description?: string;
+};
+
+type ValidationType =
+  | CustomAttributeType
+  | typeof String
+  | typeof Number
+  | typeof Boolean
+  | typeof Object
+  | typeof Array
+  | 'String'
+  | 'Number'
+  | 'Boolean'
+  | 'Object'
+  | 'Array';
+```
+
+### ConfigFunction Type
+
+Define custom functions:
+
+```typescript
+type ConfigFunction = {
+  returns?: ValidationType | ValidationType[];
+  parameters?: Record<string, SchemaAttribute>;
+  transform?(parameters: Record<string, any>, config: Config): any;
+  validate?(fn: Function, config: Config): ValidationError[];
+};
+```
+
+## Type-Safe Schemas
+
+### Basic Schema Example
+
+```typescript
+import { Schema } from '@markdoc/markdoc';
+
+const callout: Schema = {
+  render: 'Callout',
+  children: ['paragraph', 'tag', 'list'],
+  attributes: {
+    type: {
+      type: String,
+      default: 'note',
+      matches: ['note', 'warning', 'error', 'success'],
+      errorLevel: 'critical'
+    },
+    title: {
+      type: String
+    }
+  }
+};
+```
+
+### Generic Schema with Render Type
+
+```typescript
+import { Schema, Node, Config, RenderableTreeNodes } from '@markdoc/markdoc';
+import Tag from '@markdoc/markdoc';
+
+const button: Schema<Config, 'Button'> = {
+  render: 'Button',
+  attributes: {
+    variant: {
+      type: String,
+      matches: ['primary', 'secondary', 'ghost'],
+      default: 'primary'
+    },
+    size: {
+      type: String,
+      matches: ['sm', 'md', 'lg'],
+      default: 'md'
+    }
+  },
+  transform(node: Node, config: Config): RenderableTreeNodes {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    return new Tag('Button', attributes, children);
+  }
+};
+```
+
+### Custom Attribute Types
+
+Create reusable attribute validators:
+
+```typescript
+import { CustomAttributeTypeInterface, Config, Scalar, ValidationError } from '@markdoc/markdoc';
+
+class ColorType implements CustomAttributeTypeInterface {
+  transform(value: any, config: Config): Scalar {
+    if (typeof value !== 'string') return value;
+    // Normalize color format
+    return value.toLowerCase();
+  }
+  
+  validate(value: any, config: Config, name: string): ValidationError[] {
+    if (typeof value !== 'string') {
+      return [{
+        id: 'color-type-invalid',
+        level: 'error',
+        message: `Attribute '${name}' must be a string`
+      }];
+    }
+    
+    const hexPattern = /^#[0-9a-f]{6}$/i;
+    const namedColors = ['red', 'blue', 'green', 'yellow'];
+    
+    if (!hexPattern.test(value) && !namedColors.includes(value.toLowerCase())) {
+      return [{
+        id: 'color-value-invalid',
+        level: 'error',
+        message: `Attribute '${name}' must be a valid hex color or named color`
+      }];
+    }
+    
+    return [];
+  }
+}
+
+const badge: Schema = {
+  render: 'Badge',
+  attributes: {
+    color: {
+      type: ColorType,
+      default: '#000000'
+    }
+  }
+};
+```
+
+## Type Guards
+
+Use type guards to safely check AST types:
+
+```typescript
+import Ast from '@markdoc/markdoc';
+import type { Value, AstType } from '@markdoc/markdoc';
+
+function processValue(value: Value, config: Config) {
+  if (Ast.isAst(value)) {
+    if (Ast.isFunction(value)) {
+      console.log('Function:', value.name);
+      return value.resolve(config);
+    }
+    if (Ast.isVariable(value)) {
+      console.log('Variable:', value.path.join('.'));
+      return value.resolve(config);
+    }
+    if (Ast.isNode(value)) {
+      console.log('Node:', value.type);
+      return value.transform(config);
+    }
+  }
+  // It's a scalar value
+  return value;
+}
+```
+
+## Async Transform Functions
+
+Handle async operations with `MaybePromise`:
+
+```typescript
+import { Schema, Node, Config, RenderableTreeNodes, MaybePromise } from '@markdoc/markdoc';
+import Tag from '@markdoc/markdoc';
+
+const dynamicContent: Schema = {
+  render: 'div',
+  attributes: {
+    url: { type: String, required: true }
+  },
+  async transform(node: Node, config: Config): Promise<RenderableTreeNodes> {
+    const { url } = node.attributes;
+    
+    // Fetch data asynchronously
+    const response = await fetch(url);
+    const data = await response.text();
+    
+    return new Tag('div', {
+      'data-source': url
+    }, [data]);
+  }
+};
+```
+
+## Strict Type Checking
+
+### tsconfig.json Settings
+
+Markdoc uses strict TypeScript settings:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "allowJs": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "moduleResolution": "node"
+  },
+  "include": ["**/*.ts", "**/*.d.ts"],
+  "exclude": ["dist", "spec", "**/*.test.ts"]
+}
+```
+
+### Extending Token Types
+
+Extend markdown-it types for custom metadata:
+
+```typescript
+import { ValidationError } from '@markdoc/markdoc';
+
+declare module 'markdown-it/lib/token' {
+  export default class Token extends require('markdown-it/lib/token') {
+    errors?: ValidationError[];
+    position?: {
+      start?: number;
+      end?: number;
+    };
+  }
+}
+```
+
+## Best Practices
+
+### 1. Use Specific Types
+
+Avoid `any` when possible:
+
+```typescript
+// Bad
+const myTag: Schema = {
+  transform(node: any, config: any): any {
+    return node.attributes.value;
+  }
+};
+
+// Good
+const myTag: Schema = {
+  transform(node: Node, config: Config): RenderableTreeNodes {
+    return node.transformChildren(config);
+  }
+};
+```
+
+### 2. Leverage Union Types for Validation
+
+```typescript
+const icon: Schema = {
+  render: 'Icon',
+  attributes: {
+    name: {
+      type: String,
+      required: true
+    },
+    size: {
+      type: [String, Number], // Accept both types
+      default: 'md'
+    }
+  }
+};
+```
+
+### 3. Type-Safe Variable Access
+
+```typescript
+function getVariable(path: string[], variables: Record<string, any>): unknown {
+  return path.reduce<any>((obj, key) => obj?.[key], variables);
+}
+```
+
+### 4. Validate Return Types
+
+Ensure functions return expected types:
+
+```typescript
+const mathFunctions: Record<string, ConfigFunction> = {
+  add: {
+    returns: Number,
+    parameters: {
+      a: { type: Number, required: true },
+      b: { type: Number, required: true }
+    },
+    transform({ a, b }): number {
+      return a + b;
+    }
+  }
+};
+```
+
+### 5. Use Readonly for Immutable Data
+
+```typescript
+const config: Config = {
+  tags: {
+    callout: { render: 'Callout' }
+  },
+  variables: {
+    title: 'My Document'
+  }
+};
+
+// Config is Readonly<ConfigType>, preventing mutations
+// config.tags.callout = {}; // Error!
+```
+
+## Transformer Interface
+
+Implement custom transformers:
+
+```typescript
+import { Transformer, Node, Config, Schema, RenderableTreeNodes } from '@markdoc/markdoc';
+
+const customTransformer: Transformer = {
+  findSchema(node: Node, config: Config): Schema | undefined {
+    const { nodes = {}, tags = {} } = config;
+    return node.tag ? tags[node.tag] : nodes[node.type];
+  },
+  
+  attributes(node: Node, config: Config): Record<string, any> {
+    const schema = this.findSchema(node, config) ?? {};
+    // Custom attribute transformation logic
+    return {};
+  },
+  
+  children(node: Node, config: Config): RenderableTreeNode[] {
+    return node.children.flatMap(child => this.node(child, config));
+  },
+  
+  node(node: Node, config: Config): RenderableTreeNodes {
+    const schema = this.findSchema(node, config);
+    if (schema?.transform) {
+      return schema.transform(node, config);
+    }
+    return this.children(node, config);
+  }
+};
+```

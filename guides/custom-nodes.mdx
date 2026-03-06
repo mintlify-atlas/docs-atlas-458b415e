@@ -1,0 +1,525 @@
+---
+title: Custom Nodes
+description: Extend Markdoc by customizing how Markdown elements are rendered with custom node schemas
+---
+
+# Custom Nodes
+
+Nodes in Markdoc represent Markdown elements like headings, paragraphs, lists, and more. Custom nodes allow you to modify how these standard Markdown constructs are transformed and rendered.
+
+## Understanding Nodes
+
+Every Markdown element maps to a node type:
+
+- `heading` → `# Heading`
+- `paragraph` → Plain text paragraphs
+- `list` → Ordered and unordered lists
+- `fence` → Code blocks
+- `image` → `![alt](src)`
+- `link` → `[text](href)`
+- And many more...
+
+## Built-in Node Types
+
+Markdoc includes these node types:
+
+```typescript
+type NodeType =
+  | 'document' | 'heading' | 'paragraph'
+  | 'fence' | 'blockquote' | 'hr'
+  | 'image' | 'link' | 'code'
+  | 'list' | 'item'
+  | 'table' | 'thead' | 'tbody' | 'tr' | 'th' | 'td'
+  | 'strong' | 'em' | 's'
+  | 'text' | 'hardbreak' | 'softbreak'
+  | 'inline' | 'comment' | 'tag' | 'error'
+  | 'node';
+```
+
+## Node Schema Structure
+
+A node schema defines how a Markdown element is transformed:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const paragraph = {
+  render: 'p',
+  children: ['inline'],
+  attributes: {
+    // Optional attributes
+  }
+};
+```
+
+## Step-by-Step: Customizing a Node
+
+<Steps>
+
+### Step 1: Choose the node to customize
+
+Decide which Markdown element you want to modify. For example, let's customize headings to add anchor links:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const heading = {
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    
+    return new Tag(
+      `h${node.attributes.level}`,
+      attributes,
+      children
+    );
+  }
+};
+```
+
+### Step 2: Register in your config
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  nodes: {
+    heading // Override the built-in heading node
+  }
+};
+```
+
+### Step 3: Use normal Markdown
+
+```markdown
+# This is a heading
+
+## Another heading
+
+Your custom node transform will be applied automatically!
+```
+
+</Steps>
+
+## Real Example: Code Blocks
+
+Here's how Markdoc implements the `fence` node for code blocks:
+
+```javascript
+const fence = {
+  render: 'pre',
+  attributes: {
+    content: { type: String, render: false, required: true },
+    language: { type: String, render: 'data-language' },
+    process: { type: Boolean, render: false, default: true }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.children.length
+      ? node.transformChildren(config)
+      : [node.attributes.content];
+
+    return new Tag('pre', attributes, children);
+  }
+};
+```
+
+This schema:
+- Renders as a `<pre>` tag
+- Stores code content in the `content` attribute (not rendered)
+- Exposes the language as a `data-language` attribute
+- Uses either children or the content attribute
+
+## Real Example: Lists
+
+The `list` node dynamically chooses between `<ol>` and `<ul>`:
+
+```javascript
+const list = {
+  children: ['item'],
+  attributes: {
+    ordered: { type: Boolean, render: false, required: true },
+    start: { type: Number },
+    marker: { type: String, render: false }
+  },
+  transform(node, config) {
+    return new Tag(
+      node.attributes.ordered ? 'ol' : 'ul',
+      node.transformAttributes(config),
+      node.transformChildren(config)
+    );
+  }
+};
+```
+
+## Real Example: Text Nodes
+
+The simplest node just returns its content:
+
+```javascript
+const text = {
+  attributes: {
+    content: { type: String, required: true }
+  },
+  transform(node) {
+    return node.attributes.content;
+  }
+};
+```
+
+## Real Example: Soft Breaks
+
+Some nodes transform to simple strings:
+
+```javascript
+const softbreak = {
+  transform() {
+    return ' ';
+  }
+};
+
+const hardbreak = {
+  render: 'br'
+};
+```
+
+## Advanced: Adding Custom Attributes
+
+You can add attributes to any Markdown element through annotations:
+
+```javascript
+const image = {
+  render: 'img',
+  attributes: {
+    src: { type: String, required: true },
+    alt: { type: String },
+    title: { type: String },
+    // Add custom attributes
+    width: { type: Number },
+    height: { type: Number },
+    loading: {
+      type: String,
+      default: 'lazy',
+      matches: ['lazy', 'eager']
+    }
+  }
+};
+```
+
+## Advanced: Inline Elements
+
+Customize inline elements like bold, italic, and links:
+
+```javascript
+const strong = {
+  render: 'strong',
+  children: ['em', 's', 'link', 'code', 'text', 'tag'],
+  attributes: {
+    marker: { type: String, render: false }
+  }
+};
+
+const em = {
+  render: 'em',
+  children: ['strong', 's', 'link', 'code', 'text', 'tag'],
+  attributes: {
+    marker: { type: String, render: false }
+  }
+};
+
+const link = {
+  render: 'a',
+  children: ['strong', 'em', 's', 'code', 'text', 'tag'],
+  attributes: {
+    href: { type: String, required: true },
+    title: { type: String }
+  }
+};
+```
+
+## Advanced: Document Node
+
+The root document node can be customized:
+
+```javascript
+const document = {
+  render: 'article',
+  children: [
+    'heading',
+    'paragraph',
+    'image',
+    'table',
+    'tag',
+    'fence',
+    'blockquote',
+    'comment',
+    'list',
+    'hr'
+  ],
+  attributes: {
+    frontmatter: { render: false }
+  }
+};
+```
+
+## Node Transform API
+
+The `transform` function receives two parameters:
+
+### node
+
+The Node instance with these properties and methods:
+
+```typescript
+class Node {
+  type: NodeType;
+  attributes: Record<string, any>;
+  children: Node[];
+  slots: Record<string, Node>;
+  tag?: string;
+  inline: boolean;
+  location?: Location;
+  errors: ValidationError[];
+  
+  // Methods
+  transformAttributes(config: Config): Record<string, any>;
+  transformChildren(config: Config): RenderableTreeNode[];
+  transform(config: Config): RenderableTreeNodes;
+  findSchema(config: Config): Schema | undefined;
+  resolve(config: Config): Node;
+  walk(): Generator<Node>;
+  push(node: Node): void;
+}
+```
+
+### config
+
+The full Markdoc configuration:
+
+```typescript
+type Config = {
+  nodes?: Record<NodeType, Schema>;
+  tags?: Record<string, Schema>;
+  functions?: Record<string, ConfigFunction>;
+  variables?: Record<string, any>;
+  partials?: Record<string, any>;
+  validation?: {
+    parents?: Node[];
+    validateFunctions?: boolean;
+    environment?: string;
+  };
+};
+```
+
+## Controlling Child Nodes
+
+Specify which nodes can be children:
+
+```javascript
+const blockquote = {
+  render: 'blockquote',
+  children: [
+    'heading',
+    'paragraph',
+    'image',
+    'table',
+    'tag',
+    'fence',
+    'blockquote',
+    'list',
+    'hr'
+  ]
+};
+```
+
+This enables validation warnings when incompatible nodes are nested.
+
+## Table Nodes
+
+Tables require several coordinated nodes:
+
+```javascript
+const table = {
+  render: 'table'
+};
+
+const thead = {
+  render: 'thead',
+  children: ['tr']
+};
+
+const tbody = {
+  render: 'tbody',
+  children: ['tr', 'tag']
+};
+
+const tr = {
+  render: 'tr',
+  children: ['th', 'td']
+};
+
+const th = {
+  render: 'th',
+  attributes: {
+    width: { type: String },
+    align: { type: String },
+    colspan: { type: Number, render: 'colSpan' },
+    rowspan: { type: Number, render: 'rowSpan' }
+  }
+};
+
+const td = {
+  render: 'td',
+  children: ['inline', 'heading', 'paragraph', 'list', 'fence'],
+  attributes: {
+    align: { type: String },
+    colspan: { type: Number, render: 'colSpan' },
+    rowspan: { type: Number, render: 'rowSpan' }
+  }
+};
+```
+
+## Common Use Cases
+
+### Add IDs to Headings
+
+```javascript
+function generateId(children) {
+  return children
+    .map(child => typeof child === 'string' ? child : '')
+    .join('')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+}
+
+const heading = {
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true },
+    id: { type: String }
+  },
+  transform(node, config) {
+    const children = node.transformChildren(config);
+    const id = node.attributes.id || generateId(children);
+    
+    return new Tag(
+      `h${node.attributes.level}`,
+      { id, ...node.transformAttributes(config) },
+      children
+    );
+  }
+};
+```
+
+### Custom Link Behavior
+
+```javascript
+const link = {
+  render: 'a',
+  children: ['strong', 'em', 's', 'code', 'text', 'tag'],
+  attributes: {
+    href: { type: String, required: true },
+    title: { type: String }
+  },
+  transform(node, config) {
+    const attributes = node.transformAttributes(config);
+    const children = node.transformChildren(config);
+    
+    // Add target="_blank" for external links
+    if (attributes.href.startsWith('http')) {
+      attributes.target = '_blank';
+      attributes.rel = 'noopener noreferrer';
+    }
+    
+    return new Tag('a', attributes, children);
+  }
+};
+```
+
+### Enhance Code Blocks
+
+```javascript
+const fence = {
+  render: 'CodeBlock',
+  attributes: {
+    content: { type: String, render: false, required: true },
+    language: { type: String },
+    process: { type: Boolean, render: false, default: true },
+    // Add custom attributes
+    filename: { type: String },
+    highlight: { type: String }
+  },
+  transform(node, config) {
+    return new Tag(
+      'CodeBlock',
+      {
+        language: node.attributes.language,
+        filename: node.attributes.filename,
+        highlight: node.attributes.highlight,
+        code: node.attributes.content
+      }
+    );
+  }
+};
+```
+
+## Best Practices
+
+1. **Preserve standard behavior**: When customizing, maintain expected Markdown behavior
+2. **Transform children**: Always call `node.transformChildren(config)` unless you have a specific reason not to
+3. **Transform attributes**: Use `node.transformAttributes(config)` to properly handle attributes
+4. **Return appropriate types**: Return a `Tag`, string, array, or `null`
+5. **Handle edge cases**: Check for missing attributes before using them
+
+## Troubleshooting
+
+### Node not being overridden
+
+Make sure you're passing nodes in the config:
+
+```javascript
+const config = {
+  nodes: {
+    heading: myCustomHeading
+  }
+};
+```
+
+### Children not rendering
+
+Always call `transformChildren`:
+
+```javascript
+transform(node, config) {
+  return new Tag(
+    'div',
+    {},
+    node.transformChildren(config) // Required!
+  );
+}
+```
+
+### Attributes missing
+
+Call `transformAttributes` to process attributes:
+
+```javascript
+transform(node, config) {
+  return new Tag(
+    'div',
+    node.transformAttributes(config), // Processes all attributes
+    node.transformChildren(config)
+  );
+}
+```
+
+## Next Steps
+
+- Learn about [Custom Tags](/guides/custom-tags) for reusable components
+- Explore [Validation](/guides/validation) to add custom validation rules
+- See [Renderers](/guides/renderers) for different output formats

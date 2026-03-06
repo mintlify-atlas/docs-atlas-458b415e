@@ -1,0 +1,122 @@
+---
+title: "Introduction to Markdoc"
+description: "A powerful, flexible, Markdown-based authoring framework for creating custom documentation sites"
+---
+
+<img
+  className="block"
+  src="https://media.brand.dev/a6427647-fe94-4206-bb4f-2d062610d0a8.svg"
+  alt="Markdoc"
+  style={{ maxWidth: '300px', margin: '0 auto 2rem' }}
+/>
+
+Markdoc is a Markdown-based syntax and toolchain for creating custom documentation sites and experiences. Originally designed to power [Stripe's public docs](https://stripe.com/docs), Markdoc provides a powerful and flexible way to author content with custom components, validation, and rendering.
+
+## What is Markdoc?
+
+Markdoc extends Markdown with a custom tag syntax that allows you to create rich, interactive documentation. It provides a complete pipeline for parsing, transforming, and rendering content with full control over the output.
+
+### Key Features
+
+<CardGroup cols={2}>
+  <Card title="Markdown-Based Syntax" icon="markdown">
+    Start with familiar Markdown and extend it with custom tags for interactive components
+  </Card>
+  <Card title="Schema-Driven Validation" icon="shield-check">
+    Define schemas for your custom tags and nodes to ensure content quality
+  </Card>
+  <Card title="Flexible Rendering" icon="paintbrush">
+    Render to React, HTML, or any custom format with built-in renderers
+  </Card>
+  <Card title="TypeScript Support" icon="code">
+    Full TypeScript support with comprehensive type definitions
+  </Card>
+</CardGroup>
+
+## How It Works
+
+Markdoc follows a straightforward parse-transform-render pipeline:
+
+<Steps>
+  <Step title="Parse">
+    Parse your Markdown content into an Abstract Syntax Tree (AST)
+  </Step>
+  <Step title="Transform">
+    Transform the AST using custom schemas, tags, and functions
+  </Step>
+  <Step title="Validate">
+    Validate your content against defined schemas to catch errors early
+  </Step>
+  <Step title="Render">
+    Render the transformed content to React, HTML, or custom output
+  </Step>
+</Steps>
+
+## Quick Example
+
+Here's a simple example of Markdoc in action:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Hello Markdoc
+
+This is **bold** text.
+
+{% callout type="note" %}
+This is a custom callout component!
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast, config);
+const html = Markdoc.renderers.html(content);
+```
+
+## Why Markdoc?
+
+<AccordionGroup>
+  <Accordion title="Content Author Friendly">
+    Markdoc keeps content authors productive with familiar Markdown syntax while providing powerful extensibility through custom tags. Authors can focus on content without wrestling with complex HTML or JSX.
+  </Accordion>
+  
+  <Accordion title="Developer Friendly">
+    Developers get full control over rendering and validation. Define custom components, create reusable tags, and enforce content standards through schemas.
+  </Accordion>
+  
+  <Accordion title="Production Ready">
+    Built to power Stripe's documentation, Markdoc has been battle-tested at scale. It includes comprehensive validation, error handling, and TypeScript support.
+  </Accordion>
+  
+  <Accordion title="Framework Agnostic">
+    While Markdoc includes a React renderer, you can render to any format. Use the HTML renderer, or create custom renderers for your specific needs.
+  </Accordion>
+</AccordionGroup>
+
+## Use Cases
+
+Markdoc is perfect for:
+
+- **Documentation Sites**: Create rich, interactive documentation with custom components
+- **Content Management**: Build content systems with validation and structured authoring
+- **Static Site Generation**: Generate static HTML from Markdown with custom features
+- **API Documentation**: Document APIs with custom syntax for parameters, responses, and examples
+- **Technical Writing**: Author technical content with code samples, callouts, and interactive elements
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Markdoc in your project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first Markdoc site in minutes
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Learn about the Markdoc architecture
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/parse">
+    Explore the complete API
+  </Card>
+</CardGroup>

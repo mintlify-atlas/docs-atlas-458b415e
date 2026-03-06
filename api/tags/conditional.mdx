@@ -1,0 +1,211 @@
+---
+title: Conditional tags (if/else)
+description: Control content rendering with conditional logic using if and else tags
+---
+
+# Conditional tags
+
+The `{% if %}` and `{% else %}` tags allow you to conditionally render content in your Markdoc documents based on variables, expressions, or any truthy/falsy values.
+
+## Usage
+
+### Basic if statement
+
+```markdoc
+{% if $showContent %}
+This content will only render if showContent is truthy.
+{% /if %}
+```
+
+### If-else statement
+
+```markdoc
+{% if $primary %}
+Primary content
+{% else /%}
+Fallback content
+{% /if %}
+```
+
+### If-else-if chain
+
+```markdoc
+{% if $user.role == "admin" %}
+Admin content
+{% else $user.role == "editor" /%}
+Editor content
+{% else /%}
+Viewer content
+{% /if %}
+```
+
+## Attributes
+
+### if tag
+
+<ParamField path="primary" type="ConditionalAttributeType" required>
+  The condition to evaluate. Can be a boolean, object, variable, or expression.
+</ParamField>
+
+### else tag
+
+<ParamField path="primary" type="ConditionalAttributeType">
+  Optional condition for else-if behavior. When omitted, acts as a simple else.
+</ParamField>
+
+## Conditional evaluation
+
+The conditional logic follows JavaScript's truthiness rules with specific handling:
+
+### Truthy values
+
+A condition is considered truthy when it is **NOT** one of the following:
+- `false`
+- `null`
+- `undefined`
+
+### Examples
+
+```markdoc
+{% if true %}
+This renders (true is truthy)
+{% /if %}
+
+{% if $user %}
+This renders if user object exists
+{% /if %}
+
+{% if $user.name %}
+This renders if user.name has a value
+{% /if %}
+
+{% if false %}
+This never renders
+{% /if %}
+
+{% if null %}
+This never renders
+{% /if %}
+
+{% if undefined %}
+This never renders
+{% /if %}
+```
+
+## Accepted types
+
+The `ConditionalAttributeType` accepts:
+- **Boolean values**: `true` or `false`
+- **Objects**: Any object value (evaluated as truthy if not null)
+- **null**: Evaluated as falsy
+- **undefined**: Evaluated as falsy (e.g., when referencing a variable that doesn't exist)
+
+## Common patterns
+
+### Feature flags
+
+```markdoc
+{% if $features.betaFeature %}
+Beta feature content here
+{% /if %}
+```
+
+### User roles and permissions
+
+```markdoc
+{% if $user.isAdmin %}
+Admin-only documentation
+{% else /%}
+General user documentation
+{% /if %}
+```
+
+### Environment-specific content
+
+```markdoc
+{% if $env.production %}
+Production deployment instructions
+{% else /%}
+Development setup instructions
+{% /if %}
+```
+
+### Complex conditions
+
+```markdoc
+{% if $gates["feature-key"].enabled %}
+Content for enabled feature
+{% /if %}
+```
+
+## Usage in tables
+
+Conditional tags can be used within table tags to conditionally render rows:
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+{% if $showExtraRows %}
+---
+- Data 1
+- Data 2
+{% /if %}
+{% /table %}
+```
+
+## Schema definition
+
+The if tag schema:
+
+```typescript
+{
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false }
+  },
+  transform(node, config) {
+    // Evaluates conditions and renders matching children
+  }
+}
+```
+
+The else tag schema:
+
+```typescript
+{
+  selfClosing: true,
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false }
+  }
+}
+```
+
+## Important notes
+
+- The `else` tag is **self-closing** by default when used without a condition
+- The condition attribute is **not rendered** in the output (render: false)
+- Multiple `else` tags can be chained for else-if behavior
+- The first truthy condition's content is rendered; subsequent conditions are skipped
+- The transform function evaluates conditions at render time and returns only the matching children
+
+## Validation
+
+If an invalid type is passed to the condition, you'll receive a validation error:
+
+```
+Attribute 'primary' must be type 'boolean | object' 
+(null or undefined are also allowed)
+```
+
+Valid examples:
+```markdoc
+{% if true /%}                    ✓ boolean
+{% if $user /%}                   ✓ object/variable
+{% if $enabled /%}                ✓ variable (can be null/undefined)
+```
+
+Invalid examples:
+```markdoc
+{% if "string" /%}                ✗ string not allowed
+{% if 123 /%}                     ✗ number not allowed
+```

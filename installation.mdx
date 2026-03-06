@@ -1,0 +1,151 @@
+---
+title: Installation
+description: Install Markdoc and configure it in your project
+---
+
+Markdoc is a powerful, flexible, Markdown-based authoring framework. This guide will walk you through installing Markdoc and setting it up in your project.
+
+## Package Installation
+
+Install Markdoc using your preferred package manager:
+
+<CodeGroup>
+```bash npm
+npm install @markdoc/markdoc
+```
+
+```bash yarn
+yarn add @markdoc/markdoc
+```
+
+```bash pnpm
+pnpm add @markdoc/markdoc
+```
+</CodeGroup>
+
+## Peer Dependencies
+
+### React (Optional)
+
+If you're using React to render your Markdoc content, install React and its type definitions:
+
+<CodeGroup>
+```bash npm
+npm install @markdoc/markdoc react @types/react
+```
+
+```bash yarn
+yarn add @markdoc/markdoc react @types/react
+```
+
+```bash pnpm
+pnpm add @markdoc/markdoc react @types/react
+```
+</CodeGroup>
+
+<Note>
+React is an **optional** peer dependency. You can use Markdoc without React by rendering to HTML strings instead.
+</Note>
+
+## TypeScript Configuration
+
+If you're using TypeScript, configure your `tsconfig.json` with the following minimal settings:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "moduleResolution": "node",
+    "target": "esnext",
+    "esModuleInterop": true
+  }
+}
+```
+
+<Note>
+The `target` option works with `es2015` or greater. Markdoc is fully typed and provides excellent TypeScript support out of the box.
+</Note>
+
+### Full TypeScript Configuration
+
+For a complete TypeScript setup, you can use these additional compiler options:
+
+```json tsconfig.json (full)
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "allowJs": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "moduleResolution": "node"
+  }
+}
+```
+
+## Importing Markdoc
+
+After installation, import Markdoc in your application:
+
+<CodeGroup>
+```javascript CommonJS
+const Markdoc = require('@markdoc/markdoc');
+```
+
+```javascript ES Modules
+import Markdoc from '@markdoc/markdoc';
+```
+</CodeGroup>
+
+For TypeScript projects, you can import with full type support:
+
+```typescript TypeScript
+import Markdoc from '@markdoc/markdoc';
+import type { Config, RenderableTreeNode } from '@markdoc/markdoc';
+```
+
+## Requirements
+
+<CardGroup cols={2}>
+  <Card title="Node.js Version" icon="node-js">
+    Node.js **14.7.0** or higher is required
+  </Card>
+  
+  <Card title="React Version" icon="react">
+    Any version of React (if using React renderer)
+  </Card>
+</CardGroup>
+
+## Verify Installation
+
+You can verify your installation by running a simple test:
+
+```javascript verify.js
+const Markdoc = require('@markdoc/markdoc');
+
+const doc = '# Hello Markdoc';
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+
+console.log('Markdoc is installed correctly!');
+console.log(content);
+```
+
+Run the verification:
+
+```bash
+node verify.js
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Get started with your first Markdoc document
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Learn about Markdoc's architecture
+  </Card>
+</CardGroup>

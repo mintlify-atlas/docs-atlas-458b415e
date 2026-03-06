@@ -1,0 +1,581 @@
+---
+title: Custom node schemas
+description: Learn how to customize and extend Markdoc's built-in nodes with custom schemas
+---
+
+# Custom node schemas
+
+Markdoc allows you to customize how nodes are rendered by providing custom schemas. This lets you change the output of standard Markdown elements or add entirely new behavior.
+
+## Schema structure
+
+A node schema defines how a node should be transformed and rendered:
+
+```ts
+type Schema = {
+  render?: string;                    // HTML tag or component name
+  children?: string[];                // Allowed child node types
+  attributes?: Record<string, SchemaAttribute>;
+  slots?: Record<string, SchemaSlot>;
+  selfClosing?: boolean;              // Whether node is self-closing
+  inline?: boolean;                   // Whether node is inline
+  transform?(node, config): RenderableTreeNodes;
+  validate?(node, config): ValidationError[];
+  description?: string;               // For documentation
+};
+```
+
+## Basic customization
+
+### Changing the rendered element
+
+Override the default HTML element:
+
+```ts
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  nodes: {
+    paragraph: {
+      render: 'div',  // Render paragraphs as divs
+      children: ['inline']
+    }
+  }
+};
+
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast, config);
+```
+
+### Using custom components
+
+Render nodes with your own components:
+
+```ts
+const config = {
+  nodes: {
+    heading: {
+      render: 'Heading',  // Custom component name
+      attributes: {
+        level: { type: Number, required: true }
+      }
+    },
+    fence: {
+      render: 'CodeBlock',
+      attributes: {
+        language: { type: String }
+      }
+    }
+  }
+};
+```
+
+Then provide the components when rendering:
+
+```tsx
+import { renderers } from '@markdoc/markdoc';
+import { Heading, CodeBlock } from './components';
+
+const components = {
+  Heading,
+  CodeBlock
+};
+
+const reactTree = renderers.react(transformed, React, { components });
+```
+
+## Defining attributes
+
+### Basic attributes
+
+Define what attributes a node accepts:
+
+```ts
+const config = {
+  nodes: {
+    image: {
+      render: 'img',
+      attributes: {
+        src: { 
+          type: String, 
+          required: true 
+        },
+        alt: { 
+          type: String,
+          default: '' 
+        },
+        width: { 
+          type: Number 
+        },
+        height: { 
+          type: Number 
+        }
+      }
+    }
+  }
+};
+```
+
+### Attribute options
+
+```ts
+type SchemaAttribute = {
+  type?: ValidationType;              // String, Number, Boolean, Object, Array, or custom
+  render?: boolean | string;          // How to render attribute
+  default?: any;                      // Default value
+  required?: boolean;                 // Whether attribute is required
+  matches?: RegExp | string[];        // Valid values
+  validate?(value, config, name): ValidationError[];
+  errorLevel?: 'debug' | 'info' | 'warning' | 'error' | 'critical';
+  description?: string;
+};
+```
+
+### Attribute rendering
+
+Control how attributes appear in output:
+
+```ts
+const config = {
+  nodes: {
+    fence: {
+      render: 'pre',
+      attributes: {
+        // Render as is
+        language: { 
+          type: String, 
+          render: true 
+        },
+        // Render with different name
+        lang: { 
+          type: String, 
+          render: 'data-language' 
+        },
+        // Don't render (internal only)
+        content: { 
+          type: String, 
+          render: false,
+          required: true
+        }
+      }
+    }
+  }
+};
+```
+
+### Custom attribute types
+
+Create custom type validation and transformation:
+
+```ts
+class UpperCaseString {
+  transform(value) {
+    return (value || '').toUpperCase();
+  }
+
+  validate(value, config, name) {
+    if (typeof value !== 'string') {
+      return [{
+        id: 'invalid-type',
+        level: 'error',
+        message: `Attribute '${name}' must be a string`
+      }];
+    }
+    return [];
+  }
+}
+
+const config = {
+  nodes: {
+    heading: {
+      render: 'h1',
+      attributes: {
+        text: { 
+          type: UpperCaseString,
+          render: true
+        }
+      }
+    }
+  }
+};
+```
+
+## Transform functions
+
+Transform functions give you complete control over node output:
+
+```ts
+import Tag from '@markdoc/markdoc';
+
+const config = {
+  nodes: {
+    heading: {
+      attributes: {
+        level: { type: Number, required: true }
+      },
+      transform(node, config) {
+        const attributes = node.transformAttributes(config);
+        const children = node.transformChildren(config);
+        
+        // Custom logic
+        const level = node.attributes.level;
+        const id = generateId(children);
+        
+        return new Tag(
+          `h${level}`,
+          { ...attributes, id },
+          children
+        );
+      }
+    }
+  }
+};
+```
+
+### Using transformAttributes and transformChildren
+
+These helper methods handle attribute and child transformation:
+
+```ts
+const config = {
+  nodes: {
+    fence: {
+      attributes: {
+        content: { type: String, render: false, required: true },
+        language: { type: String, render: 'data-language' }
+      },
+      transform(node, config) {
+        // Transform attributes according to schema
+        const attributes = node.transformAttributes(config);
+        
+        // Transform children or use content
+        const children = node.children.length
+          ? node.transformChildren(config)
+          : [node.attributes.content];
+        
+        return new Tag('pre', attributes, children);
+      }
+    }
+  }
+};
+```
+
+### Async transforms
+
+Transform functions can be async for dynamic content:
+
+```ts
+const config = {
+  nodes: {
+    image: {
+      attributes: {
+        src: { type: String, required: true }
+      },
+      async transform(node, config) {
+        const src = node.attributes.src;
+        
+        // Fetch image metadata
+        const metadata = await getImageMetadata(src);
+        
+        return new Tag('img', {
+          src,
+          width: metadata.width,
+          height: metadata.height
+        });
+      }
+    }
+  }
+};
+
+// Use with await
+const transformed = await Markdoc.transform(ast, config);
+```
+
+## Validation
+
+Add custom validation logic:
+
+```ts
+const config = {
+  nodes: {
+    heading: {
+      attributes: {
+        level: { type: Number, required: true }
+      },
+      validate(node, config) {
+        const errors = [];
+        const level = node.attributes.level;
+        
+        // Check level is in valid range
+        if (level < 1 || level > 6) {
+          errors.push({
+            id: 'invalid-heading-level',
+            level: 'error',
+            message: `Heading level must be between 1 and 6, got ${level}`,
+            location: node.location
+          });
+        }
+        
+        // Check heading has content
+        if (node.children.length === 0) {
+          errors.push({
+            id: 'empty-heading',
+            level: 'warning',
+            message: 'Heading is empty'
+          });
+        }
+        
+        return errors;
+      }
+    }
+  }
+};
+```
+
+## Controlling children
+
+Specify which node types can be children:
+
+```ts
+const config = {
+  nodes: {
+    blockquote: {
+      render: 'blockquote',
+      // Only allow these child types
+      children: [
+        'heading',
+        'paragraph',
+        'list',
+        'fence',
+        'blockquote'
+      ]
+    }
+  }
+};
+```
+
+## Examples
+
+### Auto-generate heading IDs
+
+```ts
+function slugify(text) {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+}
+
+const config = {
+  nodes: {
+    heading: {
+      attributes: {
+        level: { type: Number, required: true }
+      },
+      transform(node, config) {
+        const children = node.transformChildren(config);
+        const text = children.join('');
+        const id = node.attributes.id || slugify(text);
+        
+        return new Tag(
+          `h${node.attributes.level}`,
+          { id },
+          children
+        );
+      }
+    }
+  }
+};
+```
+
+### Add copy button to code blocks
+
+```tsx
+const config = {
+  nodes: {
+    fence: {
+      render: 'CodeBlock',
+      attributes: {
+        content: { type: String },
+        language: { type: String }
+      },
+      transform(node, config) {
+        return new Tag(
+          'CodeBlock',
+          {
+            language: node.attributes.language,
+            code: node.attributes.content
+          }
+        );
+      }
+    }
+  }
+};
+
+// Component
+function CodeBlock({ language, code }) {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  
+  return (
+    <div className="code-block">
+      <button onClick={handleCopy}>
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+      <pre data-language={language}>
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+```
+
+### Image optimization
+
+```ts
+const config = {
+  nodes: {
+    image: {
+      render: 'OptimizedImage',
+      attributes: {
+        src: { type: String, required: true },
+        alt: { type: String },
+        width: { type: Number },
+        height: { type: Number }
+      },
+      async transform(node, config) {
+        const { src, alt, width, height } = node.attributes;
+        
+        // Generate responsive image URLs
+        const srcset = await generateSrcSet(src, {
+          widths: [320, 640, 960, 1280]
+        });
+        
+        return new Tag('OptimizedImage', {
+          src,
+          srcset,
+          alt,
+          width,
+          height,
+          loading: 'lazy'
+        });
+      }
+    }
+  }
+};
+```
+
+### Link security
+
+```ts
+const config = {
+  nodes: {
+    link: {
+      render: 'a',
+      attributes: {
+        href: { type: String, required: true },
+        title: { type: String }
+      },
+      transform(node, config) {
+        const attributes = node.transformAttributes(config);
+        const children = node.transformChildren(config);
+        
+        // Add security attributes for external links
+        const isExternal = /^https?:\/\//.test(attributes.href);
+        
+        if (isExternal) {
+          attributes.target = '_blank';
+          attributes.rel = 'noopener noreferrer';
+        }
+        
+        return new Tag('a', attributes, children);
+      }
+    }
+  }
+};
+```
+
+### Table of contents from headings
+
+```ts
+const config = {
+  nodes: {
+    heading: {
+      attributes: {
+        level: { type: Number, required: true }
+      },
+      transform(node, config) {
+        const children = node.transformChildren(config);
+        const text = children.join('');
+        const id = slugify(text);
+        
+        // Store heading info for TOC
+        if (!config.toc) config.toc = [];
+        config.toc.push({
+          level: node.attributes.level,
+          text,
+          id
+        });
+        
+        return new Tag(
+          `h${node.attributes.level}`,
+          { id },
+          children
+        );
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse(content);
+const config = { nodes, toc: [] };
+const transformed = Markdoc.transform(ast, config);
+
+// config.toc now contains heading data
+console.log(config.toc);
+```
+
+## Global attributes
+
+All nodes automatically support `id` and `class` attributes. These are defined in the transformer:
+
+```ts
+const globalAttributes = {
+  class: { type: Class, render: true },
+  id: { type: Id, render: true }
+};
+```
+
+You can use them in any node:
+
+```markdown
+# Heading {% #custom-id .highlight .large %}
+
+Paragraph with class {% .callout %}
+```
+
+## Best practices
+
+1. **Prefer render over transform** - Use `render` for simple component mapping. Only use `transform` when you need custom logic.
+
+2. **Use transformAttributes and transformChildren** - These methods handle nested variables, functions, and schemas correctly.
+
+3. **Validate inputs** - Add validation logic to catch errors early.
+
+4. **Document schemas** - Use the `description` field to document your custom nodes.
+
+5. **Handle errors gracefully** - Return meaningful error messages with location information.
+
+6. **Test async transforms** - If using async transforms, ensure your rendering pipeline supports promises.
+
+## Next steps
+
+- Learn about [node structure](/api/nodes/overview)
+- See [built-in node schemas](/api/nodes/markdown-nodes)
+- Explore [schema reference](/api/schemas)
+- Read about [transformation](/docs/transform)

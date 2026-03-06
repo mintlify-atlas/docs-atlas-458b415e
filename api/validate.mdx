@@ -1,0 +1,411 @@
+---
+title: validate()
+description: Validate a Markdoc AST against schema definitions and configuration
+---
+
+# validate()
+
+The `validate()` function checks a Markdoc AST for errors, warnings, and schema violations. It validates node types, attributes, tag usage, variable references, and function calls according to your configuration.
+
+## Function Signature
+
+```typescript
+function validate<C extends Config = Config>(
+  node: Node,
+  options?: C
+): ValidateError[]
+```
+
+## Parameters
+
+<ParamField path="node" type="Node" required>
+  The Markdoc AST node to validate, typically the output from `parse()`.
+</ParamField>
+
+<ParamField path="options" type="Config">
+  Configuration object that defines validation rules:
+  
+  <ParamField path="options.nodes" type="Record<NodeType, Schema>">
+    Schema definitions for Markdown nodes with validation rules
+  </ParamField>
+  
+  <ParamField path="options.tags" type="Record<string, Schema>">
+    Schema definitions for custom tags with validation rules
+  </ParamField>
+  
+  <ParamField path="options.variables" type="Record<string, any>">
+    Valid variables - enables variable reference validation
+  </ParamField>
+  
+  <ParamField path="options.functions" type="Record<string, ConfigFunction>">
+    Function definitions with parameter and return type validation
+  </ParamField>
+  
+  <ParamField path="options.validation" type="object">
+    Validation configuration:
+    
+    <ParamField path="options.validation.validateFunctions" type="boolean" default="false">
+      Enable strict function validation (parameters, return types)
+    </ParamField>
+    
+    <ParamField path="options.validation.environment" type="string">
+      Environment context for conditional validation
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="ValidateError[]" type="Array<ValidateError>">
+  Returns an array of validation errors. Each error contains:
+  
+  <ResponseField name="type" type="string">
+    The node type where the error occurred (e.g., "heading", "tag")
+  </ResponseField>
+  
+  <ResponseField name="lines" type="number[]">
+    Line range `[startLine, endLine]` in the source document
+  </ResponseField>
+  
+  <ResponseField name="location" type="Location">
+    Source location with file, line, and character information
+  </ResponseField>
+  
+  <ResponseField name="error" type="ValidationError">
+    The actual error details:
+    - `id`: Error identifier (e.g., "attribute-undefined")
+    - `level`: Severity - "debug" | "info" | "warning" | "error" | "critical"
+    - `message`: Human-readable error message
+  </ResponseField>
+</ResponseField>
+
+## Usage Examples
+
+### Basic Validation
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+{% callout type="invalid" %}
+Some content
+{% /callout %}
+`;
+
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, {
+  tags: {
+    callout: {
+      attributes: {
+        type: {
+          type: String,
+          matches: ['info', 'warning', 'error']
+        }
+      }
+    }
+  }
+});
+
+console.log(errors);
+// [{
+//   type: 'tag',
+//   error: {
+//     id: 'attribute-value-invalid',
+//     level: 'error',
+//     message: "Attribute 'type' must match one of ..."
+//   }
+// }]
+```
+
+### Required Attributes
+
+```javascript
+const config = {
+  tags: {
+    link: {
+      render: 'a',
+      attributes: {
+        href: {
+          type: String,
+          required: true
+        },
+        title: {
+          type: String
+        }
+      }
+    }
+  }
+};
+
+const doc = `{% link title="Click here" %}Text{% /link %}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+
+// Error: Missing required attribute: 'href'
+```
+
+### Type Validation
+
+```javascript
+const config = {
+  tags: {
+    columns: {
+      attributes: {
+        count: {
+          type: Number,
+          required: true
+        }
+      }
+    }
+  }
+};
+
+const doc = `{% columns count="three" /%}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+
+// Error: Attribute 'count' must be type of 'Number'
+```
+
+### Variable Validation
+
+```javascript
+const config = {
+  variables: {
+    user: {
+      name: 'John',
+      email: 'john@example.com'
+    }
+  }
+};
+
+const doc = `Welcome {% $user.name %}! Your ID is {% $user.id %}.`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+
+// Error: Undefined variable: 'user.id'
+```
+
+### Function Validation
+
+```javascript
+const config = {
+  validation: {
+    validateFunctions: true
+  },
+  functions: {
+    equals: {
+      parameters: {
+        0: { type: String, required: true },
+        1: { type: String, required: true }
+      },
+      returns: Boolean
+    }
+  }
+};
+
+const doc = `{% if equals("test") %}Content{% /if %}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+
+// Error: Missing required parameter: '1'
+```
+
+### Custom Validation
+
+```javascript
+const config = {
+  tags: {
+    image: {
+      attributes: {
+        src: {
+          type: String,
+          required: true,
+          validate(value, config) {
+            if (!value.startsWith('http')) {
+              return [{
+                id: 'invalid-url',
+                level: 'error',
+                message: 'Image src must be a full URL'
+              }];
+            }
+            return [];
+          }
+        }
+      }
+    }
+  }
+};
+
+const doc = `{% image src="/relative/path.jpg" /%}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+
+// Error: Image src must be a full URL
+```
+
+### Custom Type Validation
+
+```javascript
+class Email {
+  validate(value) {
+    if (!value.includes('@')) {
+      return [{
+        id: 'invalid-email',
+        level: 'error',
+        message: 'Must be a valid email address'
+      }];
+    }
+    return [];
+  }
+}
+
+const config = {
+  tags: {
+    contact: {
+      attributes: {
+        email: {
+          type: Email,
+          required: true
+        }
+      }
+    }
+  }
+};
+
+const doc = `{% contact email="invalid" /%}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+```
+
+### Inline/Block Validation
+
+```javascript
+const config = {
+  tags: {
+    badge: {
+      inline: true,
+      render: 'span'
+    },
+    callout: {
+      inline: false,
+      render: 'div'
+    }
+  }
+};
+
+// Invalid: block tag used inline
+const doc1 = `This is {% callout %}inline{% /callout %} text.`;
+const errors1 = Markdoc.validate(Markdoc.parse(doc1), config);
+// Error: 'callout' tag should be block
+
+// Invalid: inline tag used as block
+const doc2 = `
+{% badge %}
+Block content
+{% /badge %}
+`;
+const errors2 = Markdoc.validate(Markdoc.parse(doc2), config);
+// Error: 'badge' tag should be inline
+```
+
+### Async Validation
+
+```javascript
+const config = {
+  nodes: {
+    image: {
+      async validate(node, config) {
+        // Check if image exists
+        const exists = await checkImageExists(node.attributes.src);
+        if (!exists) {
+          return [{
+            id: 'image-not-found',
+            level: 'error',
+            message: `Image not found: ${node.attributes.src}`
+          }];
+        }
+        return [];
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse('![alt](/missing.jpg)');
+const errors = await Markdoc.validate(ast, config);
+```
+
+### Parent Context Validation
+
+```javascript
+const config = {
+  tags: {
+    table: {},
+    row: {},
+    cell: {
+      validate(node, config) {
+        const parents = config.validation?.parents || [];
+        const inTable = parents.some(p => p.tag === 'table');
+        
+        if (!inTable) {
+          return [{
+            id: 'cell-outside-table',
+            level: 'error',
+            message: 'Cell must be inside a table'
+          }];
+        }
+        return [];
+      }
+    }
+  }
+};
+
+const doc = `{% cell %}Invalid{% /cell %}`;
+const ast = Markdoc.parse(doc);
+const errors = Markdoc.validate(ast, config);
+```
+
+## Error Severity Levels
+
+- **debug**: Informational, for development
+- **info**: Non-critical information
+- **warning**: Potential issues that don't prevent rendering
+- **error**: Schema violations, invalid usage
+- **critical**: Parse errors, undefined tags/nodes
+
+## Common Error IDs
+
+- `tag-undefined` - Unknown tag used
+- `node-undefined` - Unknown node type
+- `attribute-undefined` - Invalid attribute name
+- `attribute-missing-required` - Required attribute not provided
+- `attribute-type-invalid` - Attribute value has wrong type
+- `attribute-value-invalid` - Attribute value doesn't match constraints
+- `parameter-undefined` - Invalid function parameter
+- `parameter-missing-required` - Required parameter not provided
+- `parameter-type-invalid` - Parameter has wrong type
+- `function-undefined` - Unknown function called
+- `variable-undefined` - Undefined variable referenced
+- `tag-placement-invalid` - Inline/block mismatch
+- `tag-selfclosing-has-children` - Self-closing tag has children
+- `slot-undefined` - Invalid slot name
+- `slot-missing-required` - Required slot not provided
+- `child-invalid` - Invalid child node type
+
+## Implementation Details
+
+The `validate()` function (index.ts:89-99, src/validator.ts:306-329):
+
+1. **Walks** the entire AST tree with parent context
+2. **Checks** each node against its schema definition
+3. **Validates** attributes, types, and constraints
+4. **Verifies** variables exist (if variables config provided)
+5. **Validates** functions (if validateFunctions enabled)
+6. **Collects** all errors with location information
+7. **Returns** flattened array of validation errors
+
+## Related APIs
+
+- [parse()](/api/parse) - Parse Markdown to AST
+- [transform()](/api/transform) - Transform validated AST
+- [render()](/api/render) - Render content after validation

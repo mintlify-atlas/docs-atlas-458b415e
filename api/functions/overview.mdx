@@ -1,0 +1,266 @@
+---
+title: Functions overview
+description: Learn about Markdoc's function system and how to create custom functions
+---
+
+# Functions
+
+Functions in Markdoc are utilities that you can use within your Markdoc content to transform values and perform logic operations. They are called using the `{% %}` syntax and can accept parameters.
+
+## Using functions
+
+Functions are called with a specific syntax in your Markdoc content:
+
+```markdown
+{% functionName(param1, param2) %}
+```
+
+For example, using the built-in `equals` function:
+
+```markdown
+{% if equals($level, "premium") %}
+Welcome, premium user!
+{% /if %}
+```
+
+Functions can be used in:
+- Tag attributes
+- Conditional statements
+- Variable expressions
+- Anywhere a dynamic value is needed
+
+## Function parameters
+
+Functions accept parameters which can be:
+- **Literals**: strings, numbers, booleans
+- **Variables**: referenced with `$` prefix (e.g., `$variableName`)
+- **Other functions**: nested function calls
+- **Arrays and objects**: structured data
+
+### Positional parameters
+
+By default, parameters are passed positionally and accessed by index:
+
+```markdown
+{% default($user.name, "Guest") %}
+```
+
+In the function definition, these are accessed as `parameters[0]`, `parameters[1]`, etc.
+
+## Creating custom functions
+
+You can define custom functions to extend Markdoc's capabilities. A function is defined using the `ConfigFunction` type:
+
+```typescript
+import { ConfigFunction } from '@markdoc/markdoc';
+
+const myFunction: ConfigFunction = {
+  transform(parameters, config) {
+    // Function logic here
+    return result;
+  }
+};
+```
+
+### ConfigFunction interface
+
+The `ConfigFunction` type has the following properties:
+
+#### `transform`
+
+```typescript
+transform?(parameters: Record<string, any>, config: Config): any
+```
+
+The `transform` function is called when the function is executed. It receives:
+- `parameters`: An object containing the function parameters (indexed by position: `0`, `1`, `2`, etc.)
+- `config`: The current Markdoc configuration object
+
+It should return the computed value.
+
+#### `parameters`
+
+```typescript
+parameters?: Record<string, SchemaAttribute>
+```
+
+Optional schema defining the expected parameters. Each parameter can specify:
+- `type`: Expected type (String, Number, Boolean, Array, Object)
+- `required`: Whether the parameter is required
+- `default`: Default value if not provided
+
+Example:
+
+```typescript
+const multiply: ConfigFunction = {
+  parameters: {
+    0: { type: Number, required: true },
+    1: { type: Number, required: true }
+  },
+  transform(parameters) {
+    return parameters[0] * parameters[1];
+  }
+};
+```
+
+#### `returns`
+
+```typescript
+returns?: ValidationType | ValidationType[]
+```
+
+Optional specification of the return type. Useful for validation when `validateFunctions` is enabled.
+
+```typescript
+const getLength: ConfigFunction = {
+  returns: Number,
+  transform(parameters) {
+    return parameters[0]?.length || 0;
+  }
+};
+```
+
+#### `validate`
+
+```typescript
+validate?(fn: Function, config: Config): ValidationError[]
+```
+
+Optional custom validation logic for the function call. Returns an array of validation errors.
+
+```typescript
+const divide: ConfigFunction = {
+  validate(fn, config) {
+    const errors = [];
+    if (fn.parameters[1] === 0) {
+      errors.push({
+        id: 'divide-by-zero',
+        level: 'error',
+        message: 'Cannot divide by zero'
+      });
+    }
+    return errors;
+  },
+  transform(parameters) {
+    return parameters[0] / parameters[1];
+  }
+};
+```
+
+## Registering functions
+
+To use custom functions, register them in your Markdoc config:
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+const config = {
+  functions: {
+    multiply: {
+      transform(parameters) {
+        return parameters[0] * parameters[1];
+      }
+    },
+    uppercase: {
+      transform(parameters) {
+        return String(parameters[0]).toUpperCase();
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse(content);
+const transformedContent = Markdoc.transform(ast, config);
+```
+
+Markdoc automatically merges your custom functions with the built-in functions, so you can use both in your content.
+
+## Example: Custom formatDate function
+
+Here's a complete example of a custom function that formats dates:
+
+```typescript
+import { ConfigFunction } from '@markdoc/markdoc';
+
+const formatDate: ConfigFunction = {
+  parameters: {
+    0: { type: String, required: true },
+    1: { type: String, required: false }
+  },
+  returns: String,
+  transform(parameters) {
+    const dateStr = parameters[0];
+    const format = parameters[1] || 'short';
+    
+    const date = new Date(dateStr);
+    
+    if (format === 'long') {
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+    
+    return date.toLocaleDateString('en-US');
+  }
+};
+
+// Register in config
+const config = {
+  functions: { formatDate }
+};
+```
+
+Use it in your Markdoc content:
+
+```markdown
+Published on {% formatDate($article.date, "long") %}
+```
+
+## Function resolution
+
+When Markdoc processes a function call:
+
+1. It looks up the function by name in the config's `functions` object
+2. It resolves all parameters (evaluating variables, nested functions, etc.)
+3. It validates the function call if validation is enabled
+4. It calls the `transform` method with the resolved parameters
+5. It returns the computed value
+
+If a function is not found, Markdoc returns `null` and may emit a validation error if validation is enabled.
+
+## Validation
+
+Enable function validation in your config:
+
+```typescript
+const config = {
+  functions: { /* your functions */ },
+  validation: {
+    validateFunctions: true
+  }
+};
+```
+
+With validation enabled, Markdoc will:
+- Check that all called functions are defined
+- Validate parameter types against the schema
+- Check for required parameters
+- Run custom `validate` methods
+- Validate return types when specified
+
+## Best practices
+
+1. **Keep functions pure**: Functions should not have side effects and should return consistent results for the same inputs
+2. **Type your parameters**: Define parameter schemas to catch errors early
+3. **Handle edge cases**: Check for undefined or invalid inputs
+4. **Document your functions**: Add descriptions to help content authors
+5. **Use meaningful names**: Function names should clearly indicate what they do
+6. **Return scalar values**: Functions should return primitives, arrays, or plain objects (not classes or complex types)
+
+## Next steps
+
+- Check out the [built-in functions](/api/functions/built-in) for examples
+- Learn about [variables](/api/variables) that can be used with functions
+- Explore [tags](/api/tags) that use functions in their attributes

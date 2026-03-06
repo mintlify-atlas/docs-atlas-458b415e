@@ -1,0 +1,281 @@
+---
+title: React renderer
+description: Render Markdoc content as React components
+---
+
+The React renderer converts a Markdoc render tree into React elements that can be used in your React application.
+
+## Installation
+
+To use the React renderer, you need to install both Markdoc and React:
+
+```bash
+npm install @markdoc/markdoc react @types/react
+```
+
+## Basic usage
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import React from 'react';
+
+const doc = `# Hello world`;
+
+const ast = Markdoc.parse(doc);
+const content = Markdoc.transform(ast);
+const reactNode = Markdoc.renderers.react(content, React);
+```
+
+Then render the React node in your component:
+
+```jsx
+function MyComponent() {
+  return <div>{reactNode}</div>;
+}
+```
+
+## API
+
+### `Markdoc.renderers.react(node, React, options?)`
+
+Converts a Markdoc render tree into React elements.
+
+#### Parameters
+
+- `node` (RenderableTreeNodes): The render tree node(s) to convert. This is typically the output from `Markdoc.transform()`.
+- `React` (ReactShape): The React object containing `createElement` and `Fragment`.
+- `options` (RenderOpts, optional): Configuration options for rendering.
+
+#### Options
+
+##### `components`
+
+Map custom tag names to React components.
+
+**Type:** `Record<string, ComponentType<any>>` or `(string) => ComponentType<any>`
+
+**Example with object:**
+
+```javascript
+import { Callout } from './components/Callout';
+
+const content = Markdoc.transform(ast, {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String }
+      }
+    }
+  }
+});
+
+const reactNode = Markdoc.renderers.react(content, React, {
+  components: {
+    Callout: Callout
+  }
+});
+```
+
+**Example with function:**
+
+```javascript
+const reactNode = Markdoc.renderers.react(content, React, {
+  components: (name) => {
+    if (name === 'Callout') return Callout;
+    return name; // Return the string for built-in HTML tags
+  }
+});
+```
+
+##### `resolveTagName`
+
+Custom function to resolve tag names to component references.
+
+**Type:** `(name: string, components: Record<string, Component> | ((string: string) => Component)) => string | Component`
+
+**Default behavior:**
+- Lowercase tag names (e.g., `div`, `p`) are rendered as HTML elements
+- Capitalized tag names (e.g., `Callout`, `Button`) are looked up in the `components` mapping
+
+**Example:**
+
+```javascript
+function customResolveTagName(name, components) {
+  // Custom logic to resolve tag names
+  if (name.startsWith('Custom')) {
+    return components[name.replace('Custom', '')];
+  }
+  return typeof components === 'function' ? components(name) : components[name];
+}
+
+const reactNode = Markdoc.renderers.react(content, React, {
+  components: { Button: MyButton },
+  resolveTagName: customResolveTagName
+});
+```
+
+## Type definitions
+
+### RenderableTreeNodes
+
+The input type accepted by the renderer:
+
+```typescript
+type RenderableTreeNode = Tag | Scalar;
+type RenderableTreeNodes = RenderableTreeNode | RenderableTreeNode[];
+
+type Scalar = null | boolean | number | string | Scalar[] | { [key: string]: Scalar };
+```
+
+### Tag
+
+A Tag represents an element in the render tree:
+
+```typescript
+class Tag {
+  name: string;
+  attributes: Record<string, any>;
+  children: RenderableTreeNode[];
+}
+```
+
+## Attributes
+
+### Class attribute conversion
+
+The React renderer automatically converts the HTML `class` attribute to React's `className`:
+
+```javascript
+// Markdoc transform output
+const tag = new Tag('div', { class: 'my-class' }, ['content']);
+
+// React renderer output
+Markdoc.renderers.react(tag, React);
+// Results in: <div className="my-class">content</div>
+```
+
+### Deep rendering
+
+Attributes containing nested Tags are recursively rendered:
+
+```javascript
+const tag = new Tag('div', {
+  'data-content': new Tag('span', {}, ['nested'])
+}, ['main content']);
+
+Markdoc.renderers.react(tag, React);
+// The nested Tag in attributes is also converted to React elements
+```
+
+## Component requirements
+
+Custom React components used with the renderer should accept props that match the attributes defined in your Markdoc schema:
+
+```typescript
+// In your Markdoc config
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String },
+        title: { type: String }
+      }
+    }
+  }
+};
+
+// Your React component
+function Callout({ type, title, children }) {
+  return (
+    <div className={`callout callout-${type}`}>
+      {title && <h3>{title}</h3>}
+      {children}
+    </div>
+  );
+}
+```
+
+## Static rendering
+
+For server-side rendering or static site generation, use `reactStatic` to generate a JavaScript string that can be evaluated:
+
+```javascript
+import { renderers } from '@markdoc/markdoc';
+
+const content = Markdoc.transform(ast);
+const code = renderers.reactStatic(content);
+
+// The `code` is a function that takes options and returns React elements
+// This can be serialized and evaluated on the client
+```
+
+See the [Static rendering](/api/renderers/html#static-rendering) section for more details on when to use static rendering.
+
+## Example: Full workflow
+
+```jsx
+import Markdoc from '@markdoc/markdoc';
+import React from 'react';
+import { Callout } from './components/Callout';
+import { Button } from './components/Button';
+
+// Define your Markdoc content
+const source = `
+# Welcome to Markdoc
+
+{% callout type="info" title="Note" %}
+This is a custom callout component.
+{% /callout %}
+
+{% button href="/docs" %}
+Read the docs
+{% /button %}
+`;
+
+// Parse and transform
+const ast = Markdoc.parse(source);
+const config = {
+  tags: {
+    callout: {
+      render: 'Callout',
+      attributes: {
+        type: { type: String },
+        title: { type: String }
+      }
+    },
+    button: {
+      render: 'Button',
+      attributes: {
+        href: { type: String, required: true }
+      }
+    }
+  }
+};
+
+const content = Markdoc.transform(ast, config);
+
+// Render to React
+const reactNode = Markdoc.renderers.react(content, React, {
+  components: {
+    Callout,
+    Button
+  }
+});
+
+// Use in your React component
+export function MarkdocPage() {
+  return (
+    <article>
+      {reactNode}
+    </article>
+  );
+}
+```
+
+## Next steps
+
+- Learn about [custom tags](/docs/tags)
+- Explore [HTML rendering](/api/renderers/html)
+- Read about [transforms](/docs/transform)

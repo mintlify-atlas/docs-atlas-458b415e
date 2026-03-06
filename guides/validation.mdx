@@ -1,0 +1,669 @@
+---
+title: Validation
+description: Validate Markdoc content with type checking, schema validation, and custom rules
+---
+
+# Validation
+
+Markdoc provides comprehensive validation to catch errors in your content before rendering. Validation checks tags, nodes, attributes, functions, and more.
+
+## Overview
+
+Validation in Markdoc:
+- Type checks attributes and parameters
+- Verifies required fields
+- Validates against allowed values
+- Checks nesting rules
+- Detects undefined tags and functions
+- Supports custom validation logic
+
+## Basic Usage
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const content = `
+{% button variant="invalid" %}
+Click me
+{% /button %}
+`;
+
+const ast = Markdoc.parse(content);
+const errors = Markdoc.validate(ast, config);
+
+errors.forEach(({ error }) => {
+  console.log(`[${error.level}] ${error.message}`);
+});
+```
+
+## Error Structure
+
+Validation returns an array of error objects:
+
+```typescript
+type ValidateError = {
+  type: string;              // Node type ('tag', 'paragraph', etc.)
+  lines: number[];           // Line numbers where the error occurs
+  location?: Location;       // Precise location in source
+  error: ValidationError;    // The error details
+};
+
+type ValidationError = {
+  id: string;                // Error identifier
+  level: 'debug' | 'info' | 'warning' | 'error' | 'critical';
+  message: string;           // Human-readable message
+  location?: Location;       // Optional location info
+};
+
+type Location = {
+  file?: string;
+  start: { line: number; character?: number };
+  end: { line: number; character?: number };
+};
+```
+
+## Error Levels
+
+- **`debug`**: Diagnostic information
+- **`info`**: Non-critical information
+- **`warning`**: Potential issues that won't break rendering
+- **`error`**: Serious issues that should be fixed
+- **`critical`**: Blocking issues that will break rendering
+
+## Attribute Validation
+
+### Type Validation
+
+Markdoc validates attribute types automatically:
+
+```javascript
+const button = {
+  render: 'button',
+  attributes: {
+    variant: {
+      type: String,
+      required: true
+    },
+    size: {
+      type: String,
+      default: 'medium'
+    },
+    disabled: {
+      type: Boolean
+    },
+    tabIndex: {
+      type: Number
+    },
+    data: {
+      type: Object
+    },
+    items: {
+      type: Array
+    }
+  }
+};
+```
+
+Supported types:
+- `String`
+- `Number`
+- `Boolean`
+- `Object`
+- `Array`
+
+### Multiple Types
+
+Allow multiple types:
+
+```javascript
+attributes: {
+  value: {
+    type: [String, Number],
+    required: true
+  }
+}
+```
+
+### Required Attributes
+
+```javascript
+attributes: {
+  src: {
+    type: String,
+    required: true  // Must be provided
+  }
+}
+```
+
+Error generated:
+
+```
+Missing required attribute: 'src'
+```
+
+### Matches Validation
+
+Validate against specific values:
+
+```javascript
+attributes: {
+  // String enum
+  variant: {
+    type: String,
+    matches: ['primary', 'secondary', 'danger'],
+    errorLevel: 'error'
+  },
+  
+  // Regex validation
+  color: {
+    type: String,
+    matches: /^#[0-9A-Fa-f]{6}$/
+  }
+}
+```
+
+Errors generated:
+
+```
+Attribute 'variant' must match one of ["primary", "secondary", "danger"]. Got 'invalid' instead.
+```
+
+### Custom Validation Functions
+
+```javascript
+attributes: {
+  email: {
+    type: String,
+    validate(value, config, name) {
+      const errors = [];
+      
+      if (!value.includes('@')) {
+        errors.push({
+          id: 'invalid-email',
+          level: 'error',
+          message: `Attribute '${name}' must be a valid email`
+        });
+      }
+      
+      return errors;
+    }
+  }
+}
+```
+
+## Function Validation
+
+Markdoc validates functions when enabled:
+
+```javascript
+const config = {
+  validation: {
+    validateFunctions: true
+  },
+  functions: {
+    uppercase: {
+      parameters: {
+        0: {
+          type: String,
+          required: true
+        }
+      },
+      returns: String
+    }
+  }
+};
+```
+
+### Parameter Validation
+
+```javascript
+const multiply = {
+  parameters: {
+    0: {
+      type: Number,
+      required: true,
+      description: 'First number'
+    },
+    1: {
+      type: Number,
+      required: true,
+      description: 'Second number'
+    }
+  },
+  returns: Number,
+  transform(parameters) {
+    return parameters[0] * parameters[1];
+  }
+};
+```
+
+Errors:
+- Undefined function
+- Invalid parameter
+- Missing required parameter
+- Type mismatch
+
+### Custom Function Validation
+
+```javascript
+const divide = {
+  parameters: {
+    0: { type: Number, required: true },
+    1: { type: Number, required: true }
+  },
+  validate(fn, config) {
+    const errors = [];
+    const divisor = fn.parameters[1];
+    
+    // Static validation (if value is known)
+    if (typeof divisor === 'number' && divisor === 0) {
+      errors.push({
+        id: 'division-by-zero',
+        level: 'error',
+        message: 'Cannot divide by zero'
+      });
+    }
+    
+    return errors;
+  },
+  returns: Number,
+  transform(parameters) {
+    return parameters[0] / parameters[1];
+  }
+};
+```
+
+## Variable Validation
+
+Markdoc validates variable references:
+
+```javascript
+const config = {
+  variables: {
+    user: {
+      name: 'John',
+      role: 'admin'
+    }
+  }
+};
+```
+
+Content:
+
+```markdown
+Name: {{ user.name }}
+Age: {{ user.age }}
+```
+
+Error:
+
+```
+Undefined variable: 'user.age'
+```
+
+## Tag Validation
+
+### Undefined Tags
+
+```markdown
+{% unknownTag %}
+Content
+{% /unknownTag %}
+```
+
+Error:
+
+```
+Undefined tag: 'unknownTag'
+```
+
+### Self-Closing Tags
+
+```javascript
+const image = {
+  render: 'img',
+  selfClosing: true
+};
+```
+
+Invalid usage:
+
+```markdown
+{% image src="/logo.png" %}
+This shouldn't be here
+{% /image %}
+```
+
+Error:
+
+```
+'image' tag should be self-closing
+```
+
+### Inline/Block Placement
+
+```javascript
+const callout = {
+  render: 'div',
+  inline: false  // Block-level tag
+};
+```
+
+Invalid usage:
+
+```markdown
+This is a paragraph with {% callout %}inline callout{% /callout %}.
+```
+
+Error:
+
+```
+'callout' tag should be block
+```
+
+## Node Validation
+
+### Undefined Nodes
+
+```
+Undefined node: 'customNode'
+```
+
+### Child Validation
+
+Validate allowed children:
+
+```javascript
+const blockquote = {
+  render: 'blockquote',
+  children: [
+    'heading',
+    'paragraph',
+    'list',
+    'fence'
+  ]
+};
+```
+
+If an invalid node is nested:
+
+```
+Can't nest 'table' in 'blockquote'
+```
+
+## Custom Schema Validation
+
+Add custom validation to schemas:
+
+```javascript
+const partial = {
+  selfClosing: true,
+  attributes: {
+    file: { type: String, required: true, render: false }
+  },
+  validate(node, config) {
+    const errors = [];
+    const { partials = {} } = config;
+    const { file } = node.attributes;
+    
+    if (!partials[file]) {
+      errors.push({
+        id: 'partial-not-found',
+        level: 'error',
+        message: `Partial '${file}' not found`
+      });
+    }
+    
+    return errors;
+  }
+};
+```
+
+## Custom Attribute Types
+
+Create reusable validation types:
+
+```javascript
+class EmailType {
+  validate(value, config, name) {
+    const errors = [];
+    
+    if (typeof value !== 'string') {
+      errors.push({
+        id: 'attribute-type-invalid',
+        level: 'error',
+        message: `Attribute '${name}' must be a string`
+      });
+      return errors;
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      errors.push({
+        id: 'invalid-email',
+        level: 'error',
+        message: `Attribute '${name}' must be a valid email address`
+      });
+    }
+    
+    return errors;
+  }
+  
+  transform(value, config) {
+    // Optionally transform the value
+    return value.toLowerCase();
+  }
+}
+
+// Usage
+const contactForm = {
+  attributes: {
+    email: {
+      type: EmailType,
+      required: true
+    }
+  }
+};
+```
+
+## Real Example: ID Attribute Type
+
+Markdoc uses custom types for global attributes:
+
+```javascript
+export class Id {
+  validate(value, config, name) {
+    if (typeof value !== 'string') {
+      return [{
+        id: 'attribute-type-invalid',
+        level: 'error',
+        message: `Attribute '${name}' must be a string`
+      }];
+    }
+    
+    // Validate ID format
+    if (!/^[a-zA-Z][\w-]*$/.test(value)) {
+      return [{
+        id: 'invalid-id',
+        level: 'error',
+        message: `ID must start with a letter and contain only letters, numbers, hyphens, and underscores`
+      }];
+    }
+    
+    return [];
+  }
+}
+
+// Registered as global attribute
+const globalAttributes = {
+  id: { type: Id, render: true }
+};
+```
+
+## Real Example: Conditional Attribute
+
+Markdoc's `{% if %}` tag uses a custom type:
+
+```javascript
+export class ConditionalAttributeType {
+  validate(value, config) {
+    // Allow any value that can be evaluated
+    return [];
+  }
+  
+  transform(value, config) {
+    // Value is evaluated at runtime
+    return value;
+  }
+}
+
+const tagIf = {
+  attributes: {
+    primary: {
+      type: ConditionalAttributeType,
+      render: false
+    }
+  }
+};
+```
+
+## Validation Configuration
+
+```javascript
+const config = {
+  validation: {
+    // Validate function calls
+    validateFunctions: true,
+    
+    // Environment for conditional validation
+    environment: 'production',
+    
+    // Available in custom validators via config.validation.parents
+    parents: [] // Populated automatically during validation
+  }
+};
+```
+
+## Accessing Parent Nodes
+
+In custom validators, access parent nodes:
+
+```javascript
+validate(node, config) {
+  const errors = [];
+  const parents = config.validation?.parents || [];
+  
+  // Check if nested in a specific parent
+  const inTable = parents.some(p => p.type === 'table');
+  
+  if (inTable) {
+    errors.push({
+      id: 'invalid-nesting',
+      level: 'error',
+      message: 'This tag cannot be used inside tables'
+    });
+  }
+  
+  return errors;
+}
+```
+
+## Validation Workflow
+
+Markdoc validates in this order:
+
+1. Check if tag/node is defined
+2. Validate inline/block placement
+3. Validate self-closing rules
+4. Validate attributes (type, required, matches)
+5. Validate slots
+6. Validate children
+7. Run custom schema validation
+8. Validate functions (if enabled)
+9. Validate variables
+
+## Error Level Guidelines
+
+- **critical**: Schema not found, invalid syntax
+- **error**: Type mismatch, missing required field, invalid value
+- **warning**: Suboptimal nesting, deprecated usage
+- **info**: Style suggestions, best practices
+- **debug**: Internal diagnostic information
+
+## Best Practices
+
+1. **Enable function validation**: Set `validateFunctions: true` in production
+2. **Use specific error IDs**: Makes errors easier to filter and handle
+3. **Provide helpful messages**: Include the expected value or format
+4. **Set appropriate levels**: Don't use 'critical' for non-blocking issues
+5. **Validate early**: Run validation before rendering
+6. **Test edge cases**: Validate with missing, null, and invalid values
+
+## Handling Validation Errors
+
+```javascript
+const errors = Markdoc.validate(ast, config);
+
+// Filter by level
+const criticalErrors = errors.filter(e => e.error.level === 'critical');
+
+if (criticalErrors.length > 0) {
+  console.error('Cannot render due to critical errors:');
+  criticalErrors.forEach(({ error, lines }) => {
+    console.error(`Line ${lines[0]}: ${error.message}`);
+  });
+  return;
+}
+
+// Log warnings
+errors
+  .filter(e => e.error.level === 'warning')
+  .forEach(({ error, location }) => {
+    console.warn(`Warning: ${error.message}`, location);
+  });
+
+// Proceed with rendering
+const transformed = Markdoc.transform(ast, config);
+```
+
+## Async Validation
+
+Validation functions can return promises:
+
+```javascript
+const urlChecker = {
+  attributes: {
+    url: {
+      type: String,
+      async validate(value, config, name) {
+        const errors = [];
+        
+        try {
+          const response = await fetch(value, { method: 'HEAD' });
+          if (!response.ok) {
+            errors.push({
+              id: 'url-not-reachable',
+              level: 'warning',
+              message: `URL '${value}' returned ${response.status}`
+            });
+          }
+        } catch (error) {
+          errors.push({
+            id: 'url-check-failed',
+            level: 'warning',
+            message: `Could not verify URL '${value}'`
+          });
+        }
+        
+        return errors;
+      }
+    }
+  }
+};
+```
+
+## Next Steps
+
+- Learn about [Custom Tags](/guides/custom-tags) to create validated tags
+- Explore [Custom Functions](/guides/custom-functions) with parameter validation
+- See [Custom Nodes](/guides/custom-nodes) for node-level validation

@@ -1,0 +1,721 @@
+---
+title: 'Nodes and AST'
+description: 'Understanding the Abstract Syntax Tree structure in Markdoc'
+---
+
+## Introduction
+
+The Abstract Syntax Tree (AST) is the intermediate representation of your Markdown content in Markdoc. The AST is composed of `Node` objects that represent every element in your document, from the document itself down to individual text nodes.
+
+## The Node Class
+
+The core of the AST is the `Node` class:
+
+```typescript
+// From ast/node.ts:16-43
+export default class Node implements AstType {
+  readonly $$mdtype = 'Node';
+
+  attributes: Record<string, any>;
+  slots: Record<string, Node>;
+  children: Node[];
+  errors: ValidationError[] = [];
+  lines: number[] = [];
+  type: NodeType;
+  tag?: string;
+  annotations: AttributeValue[];
+
+  inline = false;
+  location?: Location;
+
+  constructor(
+    type: NodeType = 'node',
+    attributes: Record<string, any> = {},
+    children: Node[] = [],
+    tag?: string
+  ) {
+    this.attributes = attributes;
+    this.children = children;
+    this.type = type;
+    this.tag = tag;
+    this.annotations = [];
+    this.slots = {};
+  }
+}
+```
+
+## Node Properties
+
+### type
+
+The `type` identifies what kind of Markdown element this node represents:
+
+```typescript
+// From types.ts:66-94
+export type NodeType =
+  | 'blockquote'
+  | 'code'
+  | 'comment'
+  | 'document'
+  | 'em'
+  | 'error'
+  | 'fence'
+  | 'hardbreak'
+  | 'heading'
+  | 'hr'
+  | 'image'
+  | 'inline'
+  | 'item'
+  | 'link'
+  | 'list'
+  | 'node'
+  | 'paragraph'
+  | 's'
+  | 'softbreak'
+  | 'strong'
+  | 'table'
+  | 'tag'
+  | 'tbody'
+  | 'td'
+  | 'text'
+  | 'th'
+  | 'thead'
+  | 'tr';
+```
+
+Each type corresponds to a standard Markdown element or Markdoc feature.
+
+### tag
+
+For custom Markdoc tags, the `tag` property contains the tag name:
+
+```markdown
+{% callout %}
+Content
+{% /callout %}
+```
+
+This creates a node with:
+```javascript
+{
+  type: 'tag',
+  tag: 'callout',
+  // ...
+}
+```
+
+<Tip>
+The `type` is `'tag'` for all custom tags. The `tag` property distinguishes which tag it is.
+</Tip>
+
+### attributes
+
+A record of key-value pairs representing the node's attributes:
+
+```javascript
+// Heading node
+{
+  type: 'heading',
+  attributes: { level: 1 },
+  children: [/* text nodes */]
+}
+
+// Link node
+{
+  type: 'link',
+  attributes: {
+    href: 'https://example.com',
+    title: 'Example'
+  },
+  children: [/* text nodes */]
+}
+```
+
+From the parser, attributes are extracted based on node type (`parser.ts:36-96`):
+
+```typescript
+function handleAttrs(token: Token, type: string) {
+  switch (type) {
+    case 'heading':
+      return { level: Number(token.tag.replace('h', '')) };
+    case 'list': {
+      const attrs = token.attrs ? Object.fromEntries(token.attrs) : undefined;
+      const ordered = token.type.startsWith('ordered');
+      return ordered && attrs?.start
+        ? { ordered: true, start: attrs.start, marker: token.markup }
+        : { ordered, marker: token.markup };
+    }
+    case 'link': {
+      const attrs = Object.fromEntries(token.attrs);
+      return attrs.title
+        ? { href: attrs.href, title: attrs.title }
+        : { href: attrs.href };
+    }
+    // ...
+  }
+}
+```
+
+### children
+
+An array of child nodes. Most nodes can have children:
+
+```javascript
+{
+  type: 'document',
+  children: [
+    { type: 'heading', children: [/* ... */] },
+    { type: 'paragraph', children: [/* ... */] },
+    { type: 'list', children: [/* ... */] }
+  ]
+}
+```
+
+Leaf nodes (like `text`, `image`, `hr`) typically have no children.
+
+### slots
+
+Named child nodes that can be referenced separately from regular children:
+
+```markdown
+{% table %}
+{% slot header %}
+| Header 1 | Header 2 |
+{% /slot %}
+
+{% slot body %}
+| Cell 1 | Cell 2 |
+{% /slot %}
+{% /table %}
+```
+
+Slots are handled during parsing (`parser.ts:174-180`):
+
+```typescript
+if (
+  handleSlots &&
+  tag === 'slot' &&
+  typeof node.attributes.primary === 'string'
+)
+  parent.slots[node.attributes.primary] = node;
+else parent.push(node);
+```
+
+### annotations
+
+Attributes applied to the node via annotation syntax:
+
+```markdown
+# Heading {% #my-id .large %}
+```
+
+The annotations array stores the raw annotation data before it's merged into attributes.
+
+### errors
+
+Validation or parsing errors associated with this node:
+
+```typescript
+node.errors.push({
+  id: 'duplicate-attribute',
+  level: 'warning',
+  message: `Attribute '${name}' already set`,
+});
+```
+
+### location
+
+Source location information for debugging:
+
+```typescript
+// From types.ts:55-64
+export type Location = {
+  file?: string;
+  start: LocationEdge;
+  end: LocationEdge;
+};
+
+export type LocationEdge = {
+  line: number;
+  character?: number;
+};
+```
+
+Set during parsing (`parser.ts:151-167`):
+
+```typescript
+if (addLocation !== false) {
+  node.lines = token.map || parent.lines || [];
+  node.location = {
+    file,
+    start: {
+      line: node.lines[0],
+      character: position.start,
+    },
+    end: {
+      line: node.lines[1],
+      character: position.end,
+    },
+  };
+}
+```
+
+### inline
+
+Whether the node is inline (within text flow) or block-level:
+
+```javascript
+// Block-level
+{ type: 'paragraph', inline: false }
+
+// Inline
+{ type: 'em', inline: true }
+```
+
+## Node Methods
+
+### walk()
+
+Generator function for traversing the tree:
+
+```typescript
+// From ast/node.ts:45-50
+*walk(): Generator<Node, void, unknown> {
+  for (const child of [...Object.values(this.slots), ...this.children]) {
+    yield child;
+    yield* child.walk();
+  }
+}
+```
+
+Usage:
+```javascript
+for (const node of documentNode.walk()) {
+  console.log(node.type);
+}
+```
+
+### push()
+
+Adds a child node:
+
+```typescript
+// From ast/node.ts:52-54
+push(node: Node) {
+  this.children.push(node);
+}
+```
+
+### resolve()
+
+Resolves variables and functions in the node:
+
+```typescript
+// From ast/node.ts:56-67
+resolve(config: Config = {}): Node {
+  return Object.assign(new Node(), this, {
+    children: this.children.map((child) => child.resolve(config)),
+    attributes: resolve(this.attributes, config),
+    slots: Object.fromEntries(
+      Object.entries(this.slots).map(([name, slot]) => [
+        name,
+        slot.resolve(config),
+      ])
+    ),
+  });
+}
+```
+
+This recursively resolves all variables and functions throughout the tree:
+
+```javascript
+const doc = Markdoc.parse('Hello $name!');
+const resolved = doc.resolve({ variables: { name: 'World' } });
+```
+
+### findSchema()
+
+Finds the schema for this node:
+
+```typescript
+// From ast/node.ts:69-71
+findSchema(config: Config = {}): Schema | undefined {
+  return transformer.findSchema(this, config);
+}
+```
+
+### transformAttributes()
+
+Transforms attributes according to the schema:
+
+```typescript
+// From ast/node.ts:73-75
+transformAttributes(config: Config = {}) {
+  return transformer.attributes(this, config);
+}
+```
+
+### transformChildren()
+
+Transforms child nodes:
+
+```typescript
+// From ast/node.ts:77-79
+transformChildren(config: Config): RenderableTreeNode[] {
+  return transformer.children(this, config);
+}
+```
+
+### transform()
+
+Full transformation to renderable tree:
+
+```typescript
+// From ast/node.ts:81-83
+transform(config: Config): MaybePromise<RenderableTreeNodes> {
+  return transformer.node(this, config);
+}
+```
+
+## AST Types
+
+Markdoc has three AST types:
+
+```typescript
+// From types.ts:12-15
+export interface AstType {
+  readonly $$mdtype: 'Function' | 'Node' | 'Variable';
+  resolve(config: Config): any;
+}
+```
+
+### Node
+
+Represents document structure (discussed above).
+
+### Variable
+
+Represents a variable reference:
+
+```typescript
+// From ast/variable.ts:3-17
+export default class Variable implements AstType {
+  readonly $$mdtype = 'Variable';
+
+  path;
+
+  constructor(path: (string | number)[] = []) {
+    this.path = path;
+  }
+
+  resolve({ variables }: Config = {}) {
+    return variables instanceof Function
+      ? variables(this.path)
+      : this.path.reduce((obj = {}, key) => obj[key], variables);
+  }
+}
+```
+
+Example:
+```javascript
+// $user.name becomes:
+new Variable(['user', 'name'])
+```
+
+### Function
+
+Represents a function call:
+
+```typescript
+// From ast/function.ts:4-22
+export default class Function implements AstType {
+  readonly $$mdtype = 'Function';
+
+  name;
+  parameters;
+
+  constructor(name: string, parameters: Record<string, any>) {
+    this.name = name;
+    this.parameters = parameters;
+  }
+
+  resolve(config: Config = {}) {
+    const fn = config?.functions?.[this.name];
+    if (!fn) return null;
+
+    const parameters = resolve(this.parameters, config);
+    return fn.transform?.(parameters, config);
+  }
+}
+```
+
+Example:
+```javascript
+// equals($a, $b) becomes:
+new Function('equals', {
+  0: new Variable(['a']),
+  1: new Variable(['b'])
+})
+```
+
+## AST Construction
+
+The parser builds the AST from tokens:
+
+```typescript
+// From parser.ts:99-197
+function handleToken(
+  token: Token,
+  nodes: Node[],
+  file?: string,
+  handleSlots?: boolean,
+  addLocation?: boolean,
+  inlineParent?: Node
+) {
+  // ... handling logic
+  
+  const attrs = handleAttrs(token, typeName);
+  const node = new Node(typeName, attrs, undefined, tag || undefined);
+  
+  // ... set location, errors, etc.
+  
+  if (token.nesting > 0) nodes.push(node);
+  
+  if (!Array.isArray(token.children)) return;
+  
+  // Recursively handle children
+  for (const child of token.children)
+    handleToken(child, nodes, file, handleSlots, addLocation, inlineParent);
+}
+```
+
+The parser maintains a stack of nodes to handle nesting:
+
+```typescript
+// From parser.ts:199-218
+export default function parser(tokens: Token[], args?: string | ParserArgs) {
+  const doc = new Node('document');
+  const nodes = [doc];
+
+  if (typeof args === 'string') args = { file: args };
+
+  for (const token of tokens)
+    handleToken(token, nodes, args?.file, args?.slots, args?.location);
+
+  if (nodes.length > 1)
+    for (const node of nodes.slice(1))
+      node.errors.push({
+        id: 'missing-closing',
+        level: 'critical',
+        message: `Node '${node.tag || node.type}' is missing closing`,
+      });
+
+  for (const transform of transforms) transform(doc, args?.conditionalTags);
+
+  return doc;
+}
+```
+
+<Note>
+Transforms are applied to the AST after parsing but before it's returned. This handles special cases like table normalization.
+</Note>
+
+## AST Serialization
+
+You can serialize and deserialize ASTs:
+
+```typescript
+// From ast/index.ts:14-28
+function reviver(_: string, value: AstType): any {
+  if (!value) return value;
+  const klass = AstTypes[value.$$mdtype] as any;
+  return klass ? Object.assign(new klass(), value) : value;
+}
+
+function fromJSON(text: string): Node | Node[] {
+  return JSON.parse(text, reviver);
+}
+```
+
+Usage:
+```javascript
+const ast = Markdoc.parse(content);
+const json = JSON.stringify(ast);
+
+// Later...
+const restored = Ast.fromJSON(json);
+const rendered = Markdoc.transform(restored, config);
+```
+
+## Common Node Patterns
+
+### Document Structure
+
+```javascript
+{
+  type: 'document',
+  attributes: { frontmatter: '...' },
+  children: [
+    {
+      type: 'heading',
+      attributes: { level: 1 },
+      children: [
+        {
+          type: 'inline',
+          children: [
+            { type: 'text', attributes: { content: 'Title' } }
+          ]
+        }
+      ]
+    },
+    {
+      type: 'paragraph',
+      children: [
+        {
+          type: 'inline',
+          children: [
+            { type: 'text', attributes: { content: 'Content' } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Tag with Variables
+
+```javascript
+{
+  type: 'tag',
+  tag: 'if',
+  attributes: {
+    primary: Variable(['showContent'])
+  },
+  children: [
+    {
+      type: 'paragraph',
+      children: [
+        {
+          type: 'inline',
+          children: [
+            {
+              type: 'text',
+              attributes: {
+                content: Variable(['message'])
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### List Structure
+
+```javascript
+{
+  type: 'list',
+  attributes: { ordered: false, marker: '-' },
+  children: [
+    {
+      type: 'item',
+      children: [
+        {
+          type: 'inline',
+          children: [
+            { type: 'text', attributes: { content: 'First item' } }
+          ]
+        }
+      ]
+    },
+    {
+      type: 'item',
+      children: [
+        {
+          type: 'inline',
+          children: [
+            { type: 'text', attributes: { content: 'Second item' } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Working with the AST
+
+### Inspecting the AST
+
+```javascript
+const ast = Markdoc.parse(content);
+
+// Pretty print
+console.log(JSON.stringify(ast, null, 2));
+
+// Walk the tree
+for (const node of ast.walk()) {
+  if (node.type === 'heading') {
+    console.log(`Heading level ${node.attributes.level}`);
+  }
+}
+```
+
+### Modifying the AST
+
+```javascript
+const ast = Markdoc.parse(content);
+
+// Add a node
+const newParagraph = new Node('paragraph', {}, [
+  new Node('inline', {}, [
+    new Node('text', { content: 'Added content' })
+  ])
+]);
+ast.push(newParagraph);
+
+// Transform modified AST
+const rendered = Markdoc.transform(ast, config);
+```
+
+### Custom AST Processing
+
+```javascript
+function collectHeadings(ast) {
+  const headings = [];
+  for (const node of ast.walk()) {
+    if (node.type === 'heading') {
+      headings.push({
+        level: node.attributes.level,
+        text: extractText(node),
+        location: node.location
+      });
+    }
+  }
+  return headings;
+}
+
+function extractText(node) {
+  let text = '';
+  for (const child of node.walk()) {
+    if (child.type === 'text') {
+      text += child.attributes.content;
+    }
+  }
+  return text;
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tags" icon="tag" href="/concepts/tags">
+    Learn how to create custom tags that generate AST nodes
+  </Card>
+  <Card title="Schema" icon="file-contract" href="/concepts/schema">
+    Understand how schemas validate and transform nodes
+  </Card>
+</CardGroup>

@@ -1,0 +1,665 @@
+---
+title: 'Tags'
+description: 'Creating and using custom Markdoc tags'
+---
+
+## Introduction
+
+Tags are Markdoc's primary extension mechanism. They allow you to add custom functionality to your documentation while maintaining a clean, readable syntax. Tags are defined by schemas that control their behavior, validation, and rendering.
+
+## Tag Basics
+
+A tag is a custom element that extends Markdown:
+
+```markdown
+{% callout type="warning" %}
+Be careful with this feature!
+{% /callout %}
+```
+
+This becomes a node in the AST:
+
+```javascript
+{
+  type: 'tag',
+  tag: 'callout',
+  attributes: { type: 'warning' },
+  children: [/* paragraph nodes */]
+}
+```
+
+<Tip>
+The `type` is always `'tag'` for custom tags. The `tag` property identifies which tag it is.
+</Tip>
+
+## Built-in Tags
+
+Markdoc includes several built-in tags:
+
+```typescript
+// From tags/index.ts:1-12
+import { tagIf, tagElse } from './conditional';
+import { partial } from './partial';
+import { table } from './table';
+import { slot } from './slot';
+
+export default {
+  else: tagElse,
+  if: tagIf,
+  partial,
+  slot,
+  table,
+};
+```
+
+### if/else Tag
+
+Conditional content rendering:
+
+```markdown
+{% if $user.isPremium %}
+Welcome, premium user!
+{% else %}
+Upgrade to premium!
+{% /if %}
+```
+
+Implementation:
+
+```typescript
+// From tags/conditional.ts:36-54
+export const tagIf: Schema = {
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false },
+  },
+
+  transform(node, config) {
+    const conditions = renderConditions(node);
+    for (const { condition, children } of conditions)
+      if (truthy(condition)) {
+        const nodes = children.flatMap<MaybePromise<RenderableTreeNodes>>(
+          (child) => child.transform(config)
+        );
+        if (nodes.some(isPromise)) {
+          return Promise.all(nodes).then((nodes) => nodes.flat());
+        }
+        return nodes as RenderableTreeNode[];
+      }
+    return [];
+  },
+};
+```
+
+The `truthy` helper determines what values are considered true:
+
+```typescript
+// From tags/conditional.ts:15-17
+export function truthy(value: any) {
+  return value !== false && value !== undefined && value !== null;
+}
+```
+
+### else Tag
+
+The companion to `if`:
+
+```typescript
+// From tags/conditional.ts:57-62
+export const tagElse: Schema = {
+  selfClosing: true,
+  attributes: {
+    primary: { type: ConditionalAttributeType, render: false },
+  },
+};
+```
+
+<Note>
+The `else` tag is self-closing because it's a marker within an `if` tag, not a container itself.
+</Note>
+
+### partial Tag
+
+Include reusable content:
+
+```markdown
+{% partial file="_footer.md" /%}
+```
+
+### slot Tag
+
+Define named slots for content:
+
+```markdown
+{% layout %}
+{% slot header %}
+Header content
+{% /slot %}
+
+{% slot body %}
+Body content
+{% /slot %}
+{% /layout %}
+```
+
+### table Tag
+
+Enhanced table with custom syntax:
+
+```markdown
+{% table %}
+* Column 1
+* Column 2
+---
+* Row 1, Cell 1
+* Row 1, Cell 2
+---
+* Row 2, Cell 1
+* Row 2, Cell 2
+{% /table %}
+```
+
+## Creating Custom Tags
+
+### Basic Tag Schema
+
+A simple tag that renders as a div:
+
+```javascript
+const alert = {
+  render: 'Alert',
+  children: ['paragraph', 'heading', 'list'],
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error', 'success']
+    }
+  }
+};
+
+export default {
+  alert
+};
+```
+
+Usage:
+```markdown
+{% alert type="warning" %}
+This is a warning!
+{% /alert %}
+```
+
+### Tag with Transform Function
+
+Custom transformation logic:
+
+```javascript
+const badge = {
+  render: 'Badge',
+  selfClosing: true,
+  attributes: {
+    text: { type: String, required: true },
+    variant: {
+      type: String,
+      default: 'default',
+      matches: ['default', 'primary', 'success', 'warning', 'danger']
+    }
+  },
+  transform(node, config) {
+    const { text, variant } = node.attributes;
+    return new Tag('Badge', {
+      variant,
+      className: `badge badge-${variant}`
+    }, [text]);
+  }
+};
+```
+
+Usage:
+```markdown
+{% badge text="New" variant="primary" /%}
+```
+
+### Tag with Variables
+
+Tags can accept variables as attribute values:
+
+```javascript
+const usercard = {
+  render: 'UserCard',
+  attributes: {
+    user: { type: Object, required: true },
+    showEmail: { type: Boolean, default: false }
+  },
+  transform(node, config) {
+    const { user, showEmail } = node.attributes;
+    
+    return new Tag('UserCard', {
+      name: user.name,
+      avatar: user.avatar,
+      email: showEmail ? user.email : null
+    });
+  }
+};
+```
+
+Usage:
+```markdown
+{% usercard user=$currentUser showEmail=true /%}
+```
+
+### Tag with Validation
+
+Add custom validation logic:
+
+```javascript
+const codeblock = {
+  render: 'CodeBlock',
+  attributes: {
+    language: { type: String, required: true },
+    title: { type: String },
+    highlightLines: { type: Array }
+  },
+  validate(node, config) {
+    const errors = [];
+    const { language, highlightLines } = node.attributes;
+    
+    const supportedLanguages = ['javascript', 'typescript', 'python', 'rust'];
+    if (!supportedLanguages.includes(language)) {
+      errors.push({
+        id: 'unsupported-language',
+        level: 'warning',
+        message: `Language '${language}' may not be supported. Supported: ${supportedLanguages.join(', ')}`
+      });
+    }
+    
+    if (highlightLines && !Array.isArray(highlightLines)) {
+      errors.push({
+        id: 'invalid-highlight',
+        level: 'error',
+        message: 'highlightLines must be an array'
+      });
+    }
+    
+    return errors;
+  }
+};
+```
+
+### Async Tag Transform
+
+Tags can perform async operations:
+
+```javascript
+const dynamicContent = {
+  render: 'DynamicContent',
+  attributes: {
+    source: { type: String, required: true }
+  },
+  async transform(node, config) {
+    const { source } = node.attributes;
+    
+    // Fetch content from external source
+    const content = await fetchContent(source);
+    
+    return new Tag('DynamicContent', {
+      source,
+      loaded: true
+    }, [content]);
+  }
+};
+```
+
+<Warning>
+Async transforms make the entire transformation pipeline async. Use sparingly for performance.
+</Warning>
+
+## Advanced Tag Patterns
+
+### Nested Tag Structure
+
+Create tags that work together:
+
+```javascript
+const tabs = {
+  render: 'Tabs',
+  children: ['tag'], // Only allow tag children
+  transform(node, config) {
+    // Filter children to only 'tab' tags
+    const tabs = node.children.filter(child => 
+      child.type === 'tag' && child.tag === 'tab'
+    );
+    
+    return new Tag('Tabs', {}, 
+      tabs.map(tab => tab.transform(config))
+    );
+  }
+};
+
+const tab = {
+  render: 'Tab',
+  attributes: {
+    label: { type: String, required: true },
+    icon: { type: String }
+  }
+};
+
+export default { tabs, tab };
+```
+
+Usage:
+```markdown
+{% tabs %}
+{% tab label="Overview" %}
+Overview content
+{% /tab %}
+
+{% tab label="API" icon="code" %}
+API documentation
+{% /tab %}
+{% /tabs %}
+```
+
+### Tag with Slots
+
+Define named content areas:
+
+```javascript
+const card = {
+  render: 'Card',
+  slots: {
+    header: { render: 'header' },
+    body: { render: 'body', required: true },
+    footer: { render: 'footer' }
+  },
+  transform(node, config) {
+    const slots = {};
+    
+    if (node.slots.header) {
+      slots.header = node.slots.header.transform(config);
+    }
+    
+    slots.body = node.slots.body.transform(config);
+    
+    if (node.slots.footer) {
+      slots.footer = node.slots.footer.transform(config);
+    }
+    
+    return new Tag('Card', {}, [
+      slots.header && new Tag('div', { className: 'card-header' }, slots.header),
+      new Tag('div', { className: 'card-body' }, slots.body),
+      slots.footer && new Tag('div', { className: 'card-footer' }, slots.footer)
+    ].filter(Boolean));
+  }
+};
+```
+
+### Tag with Functions
+
+Accept function calls in attributes:
+
+```javascript
+const filter = {
+  render: 'FilteredList',
+  attributes: {
+    items: { type: Array, required: true },
+    condition: { type: Function }
+  },
+  transform(node, config) {
+    let { items, condition } = node.attributes;
+    
+    // If condition is a function, it was resolved during resolve phase
+    if (condition && typeof condition === 'function') {
+      items = items.filter(condition);
+    }
+    
+    return new Tag('FilteredList', {}, 
+      items.map(item => new Tag('li', {}, [item]))
+    );
+  }
+};
+```
+
+Usage:
+```markdown
+{% filter items=$products condition=isAvailable() %}
+{% /filter %}
+```
+
+## Tag Configuration
+
+Register tags in your config:
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+import * as customTags from './tags';
+
+const config = {
+  tags: {
+    ...customTags,
+    // Or individually:
+    alert: alertTag,
+    badge: badgeTag,
+    tabs: tabsTag,
+    tab: tabTag
+  },
+  variables: {
+    currentUser: getCurrentUser(),
+    products: getProducts()
+  },
+  functions: {
+    isAvailable: {
+      transform(params, config) {
+        return (product) => product.available;
+      }
+    }
+  }
+};
+
+const ast = Markdoc.parse(content);
+const transformed = Markdoc.transform(ast, config);
+```
+
+## Tag Resolution
+
+Tags are resolved through the transformer:
+
+```typescript
+// From transformer.ts:23-25
+findSchema(node: Node, { nodes = {}, tags = {} }: Config = {}) {
+  return node.tag ? tags[node.tag] : nodes[node.type as NodeType];
+},
+```
+
+The schema lookup:
+1. Checks if the node has a `tag` property
+2. Looks up the tag in `config.tags`
+3. Falls back to `config.nodes` for standard nodes
+
+## Tag Attributes Resolution
+
+Attributes are processed during transformation:
+
+```typescript
+// From transformer.ts:27-58
+attributes(node: Node, config: Config = {}) {
+  const schema = this.findSchema(node, config) ?? {};
+  const output: Record<string, any> = {};
+
+  const attrs = { ...globalAttributes, ...schema.attributes };
+  for (const [key, attr] of Object.entries(attrs)) {
+    if (attr.render == false) continue;
+
+    const name = typeof attr.render === 'string' ? attr.render : key;
+
+    let value = node.attributes[key];
+    if (typeof attr.type === 'function') {
+      const instance: any = new attr.type();
+      if (instance.transform) {
+        value = instance.transform(value, config);
+      }
+    }
+    value = value === undefined ? attr.default : value;
+
+    if (value === undefined) continue;
+    output[name] = value;
+  }
+  // ... handle slots
+  return output;
+},
+```
+
+This process:
+1. Merges global and schema-specific attributes
+2. Skips attributes with `render: false`
+3. Applies custom attribute type transformations
+4. Uses default values when needed
+5. Renames attributes if `render` is a string
+
+## Tag Children Transformation
+
+Children are transformed recursively:
+
+```typescript
+// From transformer.ts:60-69
+children(node: Node, config: Config = {}) {
+  const children = node.children.flatMap<MaybePromise<RenderableTreeNodes>>(
+    (child) => this.node(child, config)
+  );
+  if (children.some(isPromise)) {
+    return Promise.all(children);
+  }
+  return children;
+},
+```
+
+## Real-World Example
+
+A complete, production-ready tag:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+export const apiEndpoint = {
+  render: 'ApiEndpoint',
+  children: ['paragraph', 'heading', 'list', 'fence'],
+  attributes: {
+    method: {
+      type: String,
+      required: true,
+      matches: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+      errorLevel: 'critical'
+    },
+    path: {
+      type: String,
+      required: true,
+      validate(value, config, name) {
+        const errors = [];
+        if (!value.startsWith('/')) {
+          errors.push({
+            id: 'invalid-path',
+            level: 'error',
+            message: 'API path must start with /'
+          });
+        }
+        return errors;
+      }
+    },
+    authenticated: {
+      type: Boolean,
+      default: true
+    },
+    deprecated: {
+      type: Boolean,
+      default: false
+    },
+    version: {
+      type: String,
+      matches: (config) => config.apiVersions || ['v1', 'v2', 'v3']
+    }
+  },
+  transform(node, config) {
+    const { method, path, authenticated, deprecated, version } = node.attributes;
+    
+    return new Tag('ApiEndpoint', {
+      method,
+      path,
+      authenticated,
+      deprecated,
+      version: version || config.defaultApiVersion || 'v1',
+      fullPath: `${config.apiBaseUrl}${path}`
+    }, node.transformChildren(config));
+  },
+  validate(node, config) {
+    const errors = [];
+    
+    if (node.attributes.deprecated && !node.children.some(
+      child => child.type === 'tag' && child.tag === 'deprecation-notice'
+    )) {
+      errors.push({
+        id: 'missing-deprecation-notice',
+        level: 'warning',
+        message: 'Deprecated endpoints should include a deprecation notice'
+      });
+    }
+    
+    return errors;
+  },
+  description: 'Documents an API endpoint with method, path, and authentication requirements'
+};
+```
+
+Usage:
+```markdown
+{% apiEndpoint method="POST" path="/users" version="v2" %}
+## Create User
+
+Creates a new user account.
+
+### Request Body
+
+{
+  "email": "user@example.com",
+  "name": "Jane Doe"
+}
+
+### Response
+
+Returns the created user object.
+{% /apiEndpoint %}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep transforms simple">
+    Complex logic should be in helper functions, not in the transform itself. This keeps tags testable and maintainable.
+  </Accordion>
+  
+  <Accordion title="Use validation early">
+    Validate in the schema rather than in transform. This gives better error messages and fails fast.
+  </Accordion>
+  
+  <Accordion title="Document your tags">
+    Use the `description` property and add JSDoc comments to your schema objects.
+  </Accordion>
+  
+  <Accordion title="Consider composition">
+    Build complex tags from simpler ones rather than creating monolithic tags.
+  </Accordion>
+  
+  <Accordion title="Test thoroughly">
+    Write tests for parsing, validation, and transformation. Include edge cases.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema" icon="file-contract" href="/concepts/schema">
+    Deep dive into schema validation and transformation
+  </Card>
+  <Card title="Overview" icon="book" href="/concepts/overview">
+    Review the overall architecture
+  </Card>
+</CardGroup>

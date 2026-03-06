@@ -1,0 +1,161 @@
+---
+title: parse()
+description: Parse Markdown content into a Markdoc AST (Abstract Syntax Tree)
+---
+
+# parse()
+
+The `parse()` function converts Markdown content or markdown-it tokens into a Markdoc AST (Abstract Syntax Tree), which can then be transformed and rendered.
+
+## Function Signature
+
+```typescript
+function parse(
+  content: string | Token[],
+  args?: string | ParserArgs
+): Node
+```
+
+## Parameters
+
+<ParamField path="content" type="string | Token[]" required>
+  The Markdown content to parse. Can be either:
+  - A Markdown string
+  - An array of markdown-it `Token` objects (for advanced use cases)
+</ParamField>
+
+<ParamField path="args" type="string | ParserArgs">
+  Optional parser configuration. Can be either:
+  - A string representing the filename (shorthand for `{ file: "filename" }`)
+  - A `ParserArgs` object with the following properties:
+  
+  <ParamField path="args.file" type="string">
+    The filename or path of the source file, used for error reporting and location tracking
+  </ParamField>
+  
+  <ParamField path="args.slots" type="boolean">
+    Enable slot parsing for component-style content distribution
+  </ParamField>
+  
+  <ParamField path="args.location" type="boolean" default="true">
+    Include location information (line numbers, character positions) in the AST nodes
+  </ParamField>
+  
+  <ParamField path="args.conditionalTags" type="string[]" default="['if']">
+    List of tags that are allowed to wrap table body content. Tags not in this list that appear between table rows are dropped during table transformation.
+  </ParamField>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="Node" type="Node">
+  Returns the root `Node` of the AST, always of type `"document"`. The Node object contains:
+  - `type`: Node type (e.g., "document", "heading", "paragraph")
+  - `attributes`: Node attributes (e.g., `{ level: 1 }` for headings)
+  - `children`: Array of child nodes
+  - `errors`: Array of parsing errors
+  - `location`: Source location information (if enabled)
+  - `lines`: Line range `[startLine, endLine]`
+</ResponseField>
+
+## Usage Examples
+
+### Basic Parsing
+
+```javascript
+import Markdoc from '@markdoc/markdoc';
+
+const doc = `
+# Hello World
+
+This is a **bold** statement.
+`;
+
+const ast = Markdoc.parse(doc);
+console.log(ast.type); // "document"
+console.log(ast.children[0].type); // "heading"
+```
+
+### Parsing with Filename
+
+```javascript
+// Using string shorthand
+const ast = Markdoc.parse(doc, 'README.md');
+
+// Or using object syntax
+const ast2 = Markdoc.parse(doc, { file: 'README.md' });
+
+console.log(ast.children[0].location.file); // "README.md"
+```
+
+### Disabling Location Tracking
+
+```javascript
+const ast = Markdoc.parse(doc, { location: false });
+console.log(ast.children[0].location); // undefined
+```
+
+### Custom Conditional Tags in Tables
+
+```javascript
+const tableDoc = `
+{% table %}
+- Column 1
+- Column 2
+---
+{% if-pref conditions=[{platform: 'web'}] %}
+- Cell 1
+- Cell 2
+{% /if-pref %}
+{% /table %}
+`;
+
+const ast = Markdoc.parse(tableDoc, {
+  conditionalTags: ['if', 'if-pref']
+});
+```
+
+### Parsing Markdown-it Tokens
+
+```javascript
+import Tokenizer from '@markdoc/markdoc/dist/tokenizer';
+
+const tokenizer = new Tokenizer();
+const tokens = tokenizer.tokenize('# Heading');
+const ast = Markdoc.parse(tokens, 'example.md');
+```
+
+## Error Handling
+
+The parser stores errors in the AST nodes rather than throwing exceptions:
+
+```javascript
+const doc = `
+{% tag %}
+Unclosed tag
+`;
+
+const ast = Markdoc.parse(doc);
+
+for (const node of ast.walk()) {
+  if (node.errors.length > 0) {
+    console.log(node.errors);
+    // [{ id: 'missing-closing', level: 'critical', message: ... }]
+  }
+}
+```
+
+## Implementation Details
+
+The `parse()` function (index.ts:43-49):
+
+1. **Tokenizes** string content using the built-in Tokenizer
+2. **Parses** tokens into an AST using the parser (src/parser.ts:199)
+3. **Applies** built-in transforms to normalize the tree structure
+4. **Returns** the document node with all metadata attached
+
+## Related APIs
+
+- [transform()](/api/transform) - Transform AST to renderable tree
+- [validate()](/api/validate) - Validate AST against schema
+- [render()](/api/render) - Render content to React/HTML

@@ -1,0 +1,419 @@
+---
+title: Table tag
+description: Create structured tables with enhanced formatting in Markdoc
+---
+
+# Table tag
+
+The `{% table %}` tag provides an enhanced way to create tables in Markdoc with more control over formatting and the ability to include tags within table cells.
+
+## Usage
+
+### Basic table
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+---
+- Row 1, Cell 1
+- Row 1, Cell 2
+---
+- Row 2, Cell 1
+- Row 2, Cell 2
+{% /table %}
+```
+
+### Table with alignment
+
+```markdoc
+{% table %}
+- Name {% align="left" %}
+- Value {% align="middle" %}
+- Status {% align="end" %}
+---
+- Item 1
+- 100
+- Active
+{% /table %}
+```
+
+### Table with formatted content
+
+```markdoc
+{% table %}
+- Feature
+- Description
+---
+- **Authentication**
+- Supports OAuth 2.0 and API keys
+---
+- **Rate limiting**
+- 1000 requests per hour
+{% /table %}
+```
+
+## Syntax
+
+### Column headers
+
+Define column headers using list items:
+```markdoc
+{% table %}
+- Header 1
+- Header 2
+- Header 3
+```
+
+### Row separator
+
+Use `---` to separate rows:
+```markdoc
+---
+- Cell 1
+- Cell 2
+- Cell 3
+```
+
+### Cell content
+
+Each list item after a separator represents a cell:
+```markdoc
+---
+- First cell
+- Second cell
+```
+
+## Attributes
+
+The table tag itself has no attributes, but it accepts specific configuration:
+
+<ResponseField name="children" type="['table']">
+  Restricts children to table-related HTML elements
+</ResponseField>
+
+<ResponseField name="inline" type="false">
+  Table is a block-level element
+</ResponseField>
+
+## Schema definition
+
+```typescript
+{
+  children: ['table'],
+  inline: false
+}
+```
+
+## Common patterns
+
+### API reference table
+
+```markdoc
+{% table %}
+- Parameter
+- Type
+- Required
+- Description
+---
+- `id`
+- `string`
+- Yes
+- Unique identifier
+---
+- `name`
+- `string`
+- Yes
+- Display name
+---
+- `enabled`
+- `boolean`
+- No
+- Feature flag
+{% /table %}
+```
+
+### Comparison table
+
+```markdoc
+{% table %}
+- Feature
+- Free Plan
+- Pro Plan
+---
+- Users
+- Up to 5
+- Unlimited
+---
+- Storage
+- 1 GB
+- 100 GB
+---
+- Support
+- Email
+- Priority
+{% /table %}
+```
+
+### Table with rich content
+
+```markdoc
+{% table %}
+- Method
+- Endpoint
+---
+- **GET**
+- `/api/users`
+  
+  Retrieves all users
+---
+- **POST**
+- `/api/users`
+  
+  Creates a new user
+{% /table %}
+```
+
+## Tables with conditional content
+
+You can use conditional tags within tables:
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+{% if $showExtraColumn %}
+- Column 3
+{% /if %}
+---
+- Data 1
+- Data 2
+{% if $showExtraColumn %}
+- Data 3
+{% /if %}
+{% /table %}
+```
+
+### Conditional rows
+
+```markdoc
+{% table %}
+- Name
+- Status
+---
+- Always visible
+- Active
+{% if $showBetaFeature %}
+---
+- Beta feature
+- Testing
+{% /if %}
+{% /table %}
+```
+
+## Alignment options
+
+While the table tag schema doesn't directly specify alignment, you can use the `align` attribute on column headers:
+
+```markdoc
+{% table %}
+- Left aligned {% align="left" %}
+- Center aligned {% align="middle" %}
+- Right aligned {% align="end" %}
+---
+- Data
+- Data
+- Data
+{% /table %}
+```
+
+## Differences from Markdown tables
+
+### Standard Markdown table
+
+```markdown
+| Column 1 | Column 2 |
+| -------- | -------- |
+| Cell 1   | Cell 2   |
+```
+
+### Markdoc table tag
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+---
+- Cell 1
+- Cell 2
+{% /table %}
+```
+
+### Advantages of table tag
+
+1. **Tag support**: Can include Markdoc tags within cells
+2. **Conditional content**: Use if/else tags for dynamic rows
+3. **Rich formatting**: Multi-line content, formatted text
+4. **Flexible structure**: More forgiving syntax
+5. **Consistent parsing**: Works with conditional tags registered in parser config
+
+## Parser integration
+
+The table tag has special handling in the Markdoc parser:
+
+### Conditional tags in tables
+
+When parsing tables, you can register conditional tags to be preserved:
+
+```javascript
+parse(document, {
+  conditionalTags: ['if', 'custom-if']
+});
+```
+
+This allows conditional logic within table structures:
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+{% if $condition %}
+---
+- Conditional row
+- More data
+{% /if %}
+{% /table %}
+```
+
+### Unregistered tags
+
+Unregistered tags are not preserved during table parsing and will be treated as content.
+
+## Formatting behavior
+
+The Markdoc formatter handles table tags specially:
+
+### Normalizes list markers
+
+Both `*` and `-` list markers are normalized to `-`:
+
+```markdoc
+{% table %}
+* Column 1
+* Column 2
+---
+* Cell 1
+* Cell 2
+{% /table %}
+```
+
+Formats to:
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+---
+- Cell 1
+- Cell 2
+{% /table %}
+```
+
+### Removes extra whitespace
+
+Excessive blank lines are removed:
+
+```markdoc
+{% table %}
+
+- Column 1
+- Column 2
+
+
+---
+
+- Cell 1
+- Cell 2
+
+{% /table %}
+```
+
+Formats to:
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+---
+- Cell 1
+- Cell 2
+{% /table %}
+```
+
+## Edge cases
+
+### Empty table
+
+```markdoc
+{% table %}
+---
+- H1
+- H2
+{% /table %}
+```
+
+A table starting with `---` creates a table with no explicit header row.
+
+### Single column
+
+```markdoc
+{% table %}
+- Single Column
+---
+- Row 1
+---
+- Row 2
+{% /table %}
+```
+
+### Multi-line cells
+
+```markdoc
+{% table %}
+- Column 1
+- Column 2
+---
+- Short content
+- Long content that spans
+  multiple lines
+  
+  With paragraph breaks
+{% /table %}
+```
+
+## Block-level behavior
+
+The table tag is **not inline** (`inline: false`), meaning:
+- It creates a block-level element
+- It should be used at the document level or within other block containers
+- It cannot be used inline within text
+
+## Children validation
+
+The schema specifies `children: ['table']`, which means:
+- The table tag expects to render as or contain HTML `<table>` elements
+- The parser validates that child content conforms to table structure
+- This helps maintain proper HTML output
+
+## Best practices
+
+1. **Consistent separators**: Always use `---` to separate rows
+2. **Column count**: Keep cell count consistent across rows
+3. **Readability**: Add blank lines between rows for clarity (formatter will normalize)
+4. **Alignment**: Use align attributes on headers, not data cells
+5. **Conditional logic**: Place conditionals around complete row structures
+
+## Limitations
+
+- Cannot nest tables within tables
+- Column spanning and row spanning are not directly supported
+- Alignment must be set on headers, not individual cells (depending on renderer)
+- Complex layouts may require custom components instead

@@ -1,0 +1,225 @@
+---
+title: 'Architecture Overview'
+description: 'Understanding the parse-transform-render pipeline in Markdoc'
+---
+
+## Introduction
+
+Markdoc is a Markdown-based authoring framework built around a three-stage pipeline architecture: **parse**, **transform**, and **render**. This modular design allows you to process Markdown content through distinct phases, each with a specific responsibility.
+
+## The Three-Stage Pipeline
+
+### 1. Parse: Markdown to AST
+
+The parse stage converts raw Markdown text into an Abstract Syntax Tree (AST). This is handled by the `parse()` function:
+
+```typescript
+// From index.ts:43-49
+export function parse(
+  content: string | Token[],
+  args?: string | ParserArgs
+): Node {
+  if (typeof content === 'string') content = tokenizer.tokenize(content);
+  return parser(content, args);
+}
+```
+
+The parsing process involves two steps:
+
+1. **Tokenization**: The `Tokenizer` class uses `markdown-it` to convert Markdown into tokens
+2. **AST Construction**: The `parser` converts tokens into a tree of `Node` objects
+
+<Tip>
+The parser can accept either a string or pre-tokenized content, giving you flexibility in how you process your documents.
+</Tip>
+
+### 2. Transform: AST to Renderable Tree
+
+The transform stage converts the AST into a renderable tree structure. This involves:
+
+- **Resolution**: Evaluating variables and functions in the AST
+- **Schema Application**: Applying node and tag schemas to determine how elements render
+- **Validation**: Checking the content against schemas (optional)
+
+```typescript
+// From index.ts:69-87
+export function transform<C extends Config = Config>(
+  nodes: any,
+  options?: C
+): any {
+  const config = mergeConfig(options);
+  const content = resolve(nodes, config);
+
+  if (Array.isArray(content))
+    return content.flatMap((child) => child.transform(config));
+  return content.transform(config);
+}
+```
+
+The transform phase uses the `transformer` (from `src/transformer.ts:22-89`) to:
+
+- Look up schemas for each node based on type or tag name
+- Transform node attributes according to schema definitions
+- Recursively transform child nodes
+- Apply custom transform functions defined in schemas
+
+### 3. Render: Renderable Tree to Output
+
+The final stage renders the transformed tree into the desired output format. Markdoc provides built-in renderers:
+
+- **React**: Converts the tree to React elements
+- **HTML**: Converts the tree to HTML strings
+- **Static**: Server-side rendering support
+
+```javascript
+const doc = Markdoc.parse(content);
+const transformed = Markdoc.transform(doc, config);
+const html = Markdoc.renderers.html(transformed);
+```
+
+## Configuration System
+
+The pipeline is driven by a configuration object that defines:
+
+```typescript
+// From types.ts:23-36
+export type ConfigType<R = string> = Partial<{
+  nodes: Partial<Record<NodeType, Schema<ConfigType, R>>>;
+  tags: Record<string, Schema>;
+  variables: Record<string, any>;
+  functions: Record<string, ConfigFunction>;
+  partials: Record<string, any>;
+  validation?: {
+    parents?: Node[];
+    validateFunctions?: boolean;
+    environment?: string;
+  };
+}>;
+```
+
+- **nodes**: Schemas for standard Markdown elements (headings, paragraphs, etc.)
+- **tags**: Custom Markdoc tags (your extensions)
+- **variables**: Data accessible via `$variable` syntax
+- **functions**: Functions callable in attributes via `function()` syntax
+- **partials**: Reusable content snippets
+- **validation**: Validation configuration options
+
+<Note>
+The configuration is merged with default schemas for nodes and built-in tags, allowing you to customize behavior without losing base functionality.
+</Note>
+
+## Pipeline Flow Example
+
+Here's how content flows through the pipeline:
+
+```markdown
+# Hello {% if $showName %}{{ $name }}{% /if %}
+```
+
+**After Parse:**
+```javascript
+Node {
+  type: 'document',
+  children: [
+    Node {
+      type: 'heading',
+      attributes: { level: 1 },
+      children: [
+        Node { type: 'text', attributes: { content: 'Hello ' } },
+        Node {
+          type: 'tag',
+          tag: 'if',
+          attributes: { primary: Variable(['showName']) },
+          children: [
+            Node { type: 'text', attributes: { content: Variable(['name']) } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**After Transform** (with `{ variables: { showName: true, name: 'World' } }`):
+```javascript
+Tag {
+  name: 'h1',
+  attributes: {},
+  children: ['Hello ', 'World']
+}
+```
+
+**After Render** (HTML):
+```html
+<h1>Hello World</h1>
+```
+
+## Key Design Principles
+
+### Separation of Concerns
+
+Each stage has a single responsibility:
+- Parse understands Markdown syntax
+- Transform understands your content schema
+- Render understands output format
+
+### Immutability
+
+The AST nodes are not mutated during transformation. The `resolve()` method creates new node instances:
+
+```typescript
+// From ast/node.ts:56-67
+resolve(config: Config = {}): Node {
+  return Object.assign(new Node(), this, {
+    children: this.children.map((child) => child.resolve(config)),
+    attributes: resolve(this.attributes, config),
+    slots: Object.fromEntries(
+      Object.entries(this.slots).map(([name, slot]) => [
+        name,
+        slot.resolve(config),
+      ])
+    ),
+  });
+}
+```
+
+### Extensibility
+
+The schema system allows you to:
+- Override default node rendering
+- Add custom validation logic
+- Create new tags with custom behavior
+- Transform nodes programmatically
+
+## Performance Considerations
+
+<Warning>
+The pipeline supports async transformations. If any schema returns a Promise, the entire transform becomes asynchronous.
+</Warning>
+
+From `transformer.ts:80-86`:
+
+```typescript
+if (isPromise(attributes) || isPromise(children)) {
+  return Promise.all([attributes, children]).then(
+    (values) => new Tag(schema.render, ...values)
+  );
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Syntax" icon="code" href="/concepts/syntax">
+    Learn about Markdoc's extended Markdown syntax
+  </Card>
+  <Card title="Schema" icon="file-contract" href="/concepts/schema">
+    Understand the schema system for validation and transformation
+  </Card>
+  <Card title="Nodes" icon="sitemap" href="/concepts/nodes">
+    Deep dive into the AST node structure
+  </Card>
+  <Card title="Tags" icon="tag" href="/concepts/tags">
+    Create and use custom Markdoc tags
+  </Card>
+</CardGroup>

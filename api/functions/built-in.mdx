@@ -1,0 +1,404 @@
+---
+title: Built-in functions
+description: Reference documentation for all built-in Markdoc functions
+---
+
+# Built-in functions
+
+Markdoc includes several built-in functions for common operations. These functions are available by default and don't require any configuration.
+
+## Logical functions
+
+### `and`
+
+Returns `true` if all parameters are truthy.
+
+**Syntax**
+
+```markdown
+{% and($var1, $var2, $var3) %}
+```
+
+**Parameters**
+
+- Accepts any number of parameters
+- Each parameter can be any type
+
+**Returns**
+
+`boolean` - `true` if all parameters are truthy, `false` otherwise
+
+**Truthy evaluation**
+
+A value is considered truthy if it is not `false`, `undefined`, or `null`. All other values (including `0`, empty strings, and empty arrays) are truthy.
+
+**Examples**
+
+```markdown
+{% if and($user.isActive, $user.isPremium) %}
+Welcome, premium user!
+{% /if %}
+
+{% if and($features.search, $features.export, $user.hasAccess) %}
+Show advanced features
+{% /if %}
+```
+
+---
+
+### `or`
+
+Returns `true` if at least one parameter is truthy.
+
+**Syntax**
+
+```markdown
+{% or($var1, $var2, $var3) %}
+```
+
+**Parameters**
+
+- Accepts any number of parameters
+- Each parameter can be any type
+
+**Returns**
+
+`boolean` - `true` if any parameter is truthy, `false` if all are falsy
+
+**Examples**
+
+```markdown
+{% if or($user.isAdmin, $user.isModerator) %}
+Show moderation tools
+{% /if %}
+
+{% if or($isDevelopment, $isStaging) %}
+Show debug information
+{% /if %}
+```
+
+---
+
+### `not`
+
+Returns the logical inverse of the parameter.
+
+**Syntax**
+
+```markdown
+{% not($var) %}
+```
+
+**Parameters**
+
+- `0` **(required)**: The value to negate
+
+**Returns**
+
+`boolean` - `true` if the parameter is falsy, `false` if truthy
+
+**Examples**
+
+```markdown
+{% if not($user.isBlocked) %}
+Welcome back!
+{% /if %}
+
+{% if not($article.isDraft) %}
+{% button href=$article.url %}Read More{% /button %}
+{% /if %}
+```
+
+---
+
+## Comparison functions
+
+### `equals`
+
+Checks if all parameters are strictly equal.
+
+**Syntax**
+
+```markdown
+{% equals($var1, $var2, $var3) %}
+```
+
+**Parameters**
+
+- Accepts any number of parameters
+- Each parameter can be any type
+
+**Returns**
+
+`boolean` - `true` if all parameters are strictly equal (`===`), `false` otherwise
+
+**Examples**
+
+```markdown
+{% if equals($user.role, "admin") %}
+Admin dashboard
+{% /if %}
+
+{% if equals($status, "published", $previousStatus) %}
+Status unchanged
+{% /if %}
+
+{% if equals($language, "en") %}
+English content
+{% /if %}
+```
+
+**Usage with variables**
+
+```markdown
+<!-- Compare variable with literal -->
+{% if equals($tier, "premium") %}
+Premium features enabled
+{% /if %}
+
+<!-- Compare two variables -->
+{% if equals($user.preferredLanguage, $document.language) %}
+This document matches your language preference
+{% /if %}
+
+<!-- Compare multiple values -->
+{% if equals($a, $b, $c) %}
+All values are the same
+{% /if %}
+```
+
+---
+
+## Utility functions
+
+### `default`
+
+Returns the first parameter if it's not `undefined`, otherwise returns the second parameter.
+
+**Syntax**
+
+```markdown
+{% default($var, fallbackValue) %}
+```
+
+**Parameters**
+
+- `0`: The primary value
+- `1`: The fallback value to use if the first parameter is `undefined`
+
+**Returns**
+
+The first parameter if not `undefined`, otherwise the second parameter
+
+**Examples**
+
+```markdown
+<!-- Provide default user name -->
+Hello, {% default($user.name, "Guest") %}!
+
+<!-- Default for missing config -->
+{% default($config.theme, "light") %}
+
+<!-- Chained defaults -->
+{% default($user.customTitle, default($user.role, "Member")) %}
+```
+
+**Usage in tag attributes**
+
+```markdown
+{% image 
+   src=$article.image 
+   alt=default($article.imageAlt, "Article image") 
+/%}
+
+{% button 
+   variant=default($variant, "primary")
+   size=default($size, "medium") 
+%}
+Click me
+{% /button %}
+```
+
+---
+
+### `debug`
+
+Converts a value to a formatted JSON string for debugging purposes.
+
+**Syntax**
+
+```markdown
+{% debug($var) %}
+```
+
+**Parameters**
+
+- `0`: The value to debug
+
+**Returns**
+
+`string` - A formatted JSON representation of the value (with 2-space indentation)
+
+**Examples**
+
+```markdown
+<!-- Debug a variable -->
+{% debug($user) %}
+
+<!-- Debug an object in a code fence -->
+{`{% debug($config.features) %}`}
+```
+
+```markdown
+<!-- Debug in a code fence -->
+{% debug($apiResponse) %}
+```
+
+**Use cases**
+
+```markdown
+<!-- Inspect variable structure during development -->
+## User Data
+
+{% debug($user) %}
+
+<!-- Check what variables are available -->
+{% if $isDevelopment %}
+### Available Variables
+
+{% debug($$) %}
+{% /if %}
+```
+
+**Output example**
+
+If `$user` contains:
+
+```javascript
+{ name: "Alice", role: "admin", id: 123 }
+```
+
+The `{% debug($user) %}` call produces:
+
+```json
+{
+  "name": "Alice",
+  "role": "admin",
+  "id": 123
+}
+```
+
+---
+
+## Combining functions
+
+Functions can be nested and combined to create complex logic:
+
+```markdown
+<!-- Nested logical operations -->
+{% if and(or($user.isAdmin, $user.isModerator), not($user.isSuspended)) %}
+Show content management tools
+{% /if %}
+
+<!-- Default with equals check -->
+{% if equals(default($config.mode, "production"), "development") %}
+Debug mode enabled
+{% /if %}
+
+<!-- Complex conditionals -->
+{% if or(
+     and(equals($user.role, "admin"), $user.isActive),
+     and(equals($user.role, "editor"), $page.allowEditors)
+   ) 
+%}
+You can edit this page
+{% /if %}
+```
+
+## Function examples in context
+
+### Content personalization
+
+```markdown
+# {% default($user.name, "Welcome") %}
+
+{% if equals($user.tier, "premium") %}
+Thank you for being a premium member!
+{% /if %}
+
+{% if and($user.isActive, not($user.hasCompletedTutorial)) %}
+## Get Started
+
+Complete our tutorial to unlock all features.
+{% /if %}
+```
+
+### Feature flags
+
+```markdown
+{% if or($features.betaSearch, $user.isBetaTester) %}
+## Try our new search
+
+{% search-component variant="beta" /%}
+{% /if %}
+
+{% if and($features.export, equals($user.plan, "business")) %}
+{% button href="/export" %}Export Data{% /button %}
+{% /if %}
+```
+
+### Environment-based content
+
+```markdown
+{% if equals($env, "development") %}
+## Debug Info
+
+{% debug($config) %}
+{% /if %}
+
+{% if equals($env, "production") %}
+{% analytics-script /%}
+{% /if %}
+```
+
+### Conditional rendering
+
+```markdown
+{% image 
+   src=$article.image
+   alt=default($article.imageAlt, $article.title)
+   width=default($article.imageWidth, 800)
+/%}
+
+{% if or(
+     equals($article.status, "draft"),
+     and(equals($article.status, "scheduled"), not($article.publishDate))
+   )
+%}
+{% callout type="warning" %}
+This article is not yet published.
+{% /callout %}
+{% /if %}
+```
+
+## Type coercion
+
+All built-in functions handle type coercion appropriately:
+
+- `and`, `or`, `not`: Use Markdoc's truthy evaluation (where `false`, `undefined`, and `null` are falsy)
+- `equals`: Uses strict equality (`===`) without type coercion
+- `default`: Checks specifically for `undefined`, not general falsiness
+- `debug`: Accepts any type and converts it to JSON
+
+## Performance considerations
+
+- Functions are evaluated during the transform step
+- Nested functions are resolved from the inside out
+- Function results are not cached, so avoid expensive computations
+- For complex logic, consider custom functions that optimize common patterns
+
+## Next steps
+
+- Learn how to [create custom functions](/api/functions/overview#creating-custom-functions)
+- Explore [variables](/api/variables) to use with functions
+- Check out [conditional tags](/api/tags/if) that use functions

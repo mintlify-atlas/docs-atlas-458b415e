@@ -1,0 +1,514 @@
+---
+title: Performance
+description: Performance optimization techniques and best practices for Markdoc
+---
+
+# Performance
+
+Markdoc is designed for performance, but understanding its internal workings can help you optimize your documentation pipeline.
+
+## Architecture Overview
+
+Markdoc processes documents in three main phases:
+
+1. **Tokenization**: Convert Markdown to tokens using markdown-it
+2. **Parsing**: Transform tokens into an AST (Abstract Syntax Tree)
+3. **Transformation**: Convert AST to renderable output
+
+### Processing Pipeline
+
+```typescript
+import Markdoc from '@markdoc/markdoc';
+
+// Phase 1: Tokenize (fast)
+const tokens = Markdoc.tokenize(markdown);
+
+// Phase 2: Parse (fast)
+const content = Markdoc.parse(tokens);
+
+// Phase 3: Transform (can be slow with complex configs)
+const renderable = Markdoc.transform(content, config);
+```
+
+## Performance Characteristics
+
+### Tokenization Performance
+
+Tokenization uses markdown-it, which is highly optimized:
+
+- **Time complexity**: O(n) where n is input length
+- **Memory**: Single pass, minimal allocations
+- **Bottlenecks**: Regular expression matching, string operations
+
+### Parsing Performance
+
+The parser converts tokens to nodes:
+
+- **Time complexity**: O(n) where n is token count
+- **Memory**: Creates Node objects for each token
+- **Bottlenecks**: Object allocation, tree construction
+
+```typescript
+// Parser processes tokens linearly
+for (const token of tokens) {
+  handleToken(token, nodes, file, handleSlots, addLocation, inlineParent);
+}
+```
+
+### Transformation Performance
+
+Transformation is the most expensive phase:
+
+- **Time complexity**: O(n × m) where n is nodes and m is average transform cost
+- **Memory**: Creates Tag objects and attribute maps
+- **Bottlenecks**: Schema lookups, attribute transformation, custom transforms
+
+```typescript
+// Transformer walks the tree recursively
+function transform(node: Node, config: Config): RenderableTreeNodes {
+  const schema = findSchema(node, config); // Schema lookup
+  if (schema?.transform) {
+    return schema.transform(node, config); // Custom transform
+  }
+  const children = node.children.flatMap(child => transform(child, config));
+  return new Tag(schema.render, attributes, children);
+}
+```
+
+## Optimization Strategies
+
+### 1. Cache Parsed Documents
+
+Parsing is deterministic - cache the AST:
+
+```typescript
+const parseCache = new Map<string, Node>();
+
+function getCachedParse(markdown: string, file: string): Node {
+  const cacheKey = `${file}:${markdown.length}`;
+  
+  if (parseCache.has(cacheKey)) {
+    return parseCache.get(cacheKey)!;
+  }
+  
+  const ast = Markdoc.parse(Markdoc.tokenize(markdown), { file });
+  parseCache.set(cacheKey, ast);
+  
+  return ast;
+}
+```
+
+### 2. Optimize Schema Lookups
+
+Schema lookups happen for every node:
+
+```typescript
+// Slow: Dynamic schema lookup
+const config: Config = {
+  tags: {
+    callout: { render: 'Callout' },
+    // ... hundreds of tags
+  }
+};
+
+// Fast: Pre-compute schema map
+class OptimizedConfig {
+  private schemaCache = new Map<string, Schema>();
+  
+  constructor(private config: Config) {
+    // Pre-cache all schemas
+    for (const [name, schema] of Object.entries(config.tags || {})) {
+      this.schemaCache.set(`tag:${name}`, schema);
+    }
+    for (const [type, schema] of Object.entries(config.nodes || {})) {
+      this.schemaCache.set(`node:${type}`, schema);
+    }
+  }
+  
+  findSchema(node: Node): Schema | undefined {
+    const key = node.tag ? `tag:${node.tag}` : `node:${node.type}`;
+    return this.schemaCache.get(key);
+  }
+}
+```
+
+### 3. Avoid Expensive Transforms
+
+Minimize work in transform functions:
+
+```typescript
+// Slow: Expensive computation in transform
+const slow: Schema = {
+  transform(node: Node, config: Config) {
+    // Heavy computation on every render
+    const processed = expensiveProcessing(node.children);
+    return new Tag('div', {}, processed);
+  }
+};
+
+// Fast: Pre-compute or cache results
+const transformCache = new WeakMap<Node, RenderableTreeNodes>();
+
+const fast: Schema = {
+  transform(node: Node, config: Config) {
+    if (transformCache.has(node)) {
+      return transformCache.get(node)!;
+    }
+    
+    const result = new Tag('div', {}, node.transformChildren(config));
+    transformCache.set(node, result);
+    return result;
+  }
+};
+```
+
+### 4. Minimize Validation in Production
+
+Validation has overhead - disable in production:
+
+```typescript
+const config: Config = {
+  tags: { /* ... */ },
+  validation: {
+    // Disable function validation in production
+    validateFunctions: process.env.NODE_ENV !== 'production'
+  }
+};
+
+// Skip validation entirely
+if (process.env.NODE_ENV === 'production') {
+  // Don't call validateTree in production
+  const content = Markdoc.transform(ast, config);
+} else {
+  const errors = validateTree(ast, config);
+  if (errors.length > 0) {
+    console.error('Validation errors:', errors);
+  }
+  const content = Markdoc.transform(ast, config);
+}
+```
+
+### 5. Use Efficient Attribute Types
+
+Custom attribute types run for every attribute:
+
+```typescript
+import { CustomAttributeTypeInterface, Config, Scalar } from '@markdoc/markdoc';
+
+// Slow: Complex validation on every check
+class SlowType implements CustomAttributeTypeInterface {
+  validate(value: any, config: Config, name: string) {
+    // Expensive regex or external calls
+    const isValid = /^complex-pattern-here$/.test(value);
+    return isValid ? [] : [{ id: 'invalid', level: 'error', message: 'Invalid' }];
+  }
+}
+
+// Fast: Simple checks, early returns
+class FastType implements CustomAttributeTypeInterface {
+  validate(value: any, config: Config, name: string) {
+    // Quick type check
+    if (typeof value !== 'string') {
+      return [{ id: 'invalid-type', level: 'error', message: 'Must be string' }];
+    }
+    
+    // Simple validation
+    if (value.length === 0) {
+      return [{ id: 'empty', level: 'error', message: 'Cannot be empty' }];
+    }
+    
+    return [];
+  }
+}
+```
+
+### 6. Batch Process Documents
+
+Process multiple documents in parallel:
+
+```typescript
+async function processDocuments(files: string[]): Promise<any[]> {
+  // Sequential: Slow
+  // const results = [];
+  // for (const file of files) {
+  //   results.push(await processFile(file));
+  // }
+  
+  // Parallel: Fast
+  return Promise.all(files.map(file => processFile(file)));
+}
+
+async function processFile(file: string) {
+  const markdown = await readFile(file, 'utf-8');
+  const ast = Markdoc.parse(Markdoc.tokenize(markdown), { file });
+  return Markdoc.transform(ast, config);
+}
+```
+
+### 7. Stream Large Documents
+
+For very large documents, consider streaming:
+
+```typescript
+function* streamTransform(node: Node, config: Config): Generator<RenderableTreeNode> {
+  for (const child of node.children) {
+    if (child.children.length > 0) {
+      yield* streamTransform(child, config);
+    } else {
+      yield child.transform(config);
+    }
+  }
+}
+
+// Process in chunks
+const chunks = [];
+for (const chunk of streamTransform(ast, config)) {
+  chunks.push(chunk);
+  
+  // Send chunk to client
+  if (chunks.length >= 100) {
+    await sendChunks(chunks);
+    chunks.length = 0;
+  }
+}
+```
+
+## Memory Optimization
+
+### 1. Node Structure
+
+Nodes contain all document information:
+
+```typescript
+class Node {
+  type: NodeType;              // ~8 bytes
+  tag?: string;                // ~8 bytes + string data
+  attributes: Record<string, any>;  // Variable
+  slots: Record<string, Node>;      // Variable
+  children: Node[];            // Variable
+  errors: ValidationError[];   // Variable
+  lines: number[];             // Variable
+  annotations: AttributeValue[]; // Variable
+  inline: boolean;             // 1 byte
+  location?: Location;         // ~32 bytes if present
+}
+```
+
+### 2. Reduce Location Tracking
+
+Location tracking adds memory overhead:
+
+```typescript
+// With locations (more memory)
+const ast = Markdoc.parse(tokens, {
+  file: 'page.md',
+  location: true  // Adds ~32 bytes per node
+});
+
+// Without locations (less memory)
+const ast = Markdoc.parse(tokens, {
+  file: 'page.md',
+  location: false  // Only in development
+});
+```
+
+### 3. Clean Up References
+
+Remove unnecessary data after processing:
+
+```typescript
+function cleanNode(node: Node): void {
+  // Remove location data in production
+  if (process.env.NODE_ENV === 'production') {
+    delete node.location;
+    delete node.lines;
+    delete node.annotations;
+  }
+  
+  // Recursively clean children
+  for (const child of node.children) {
+    cleanNode(child);
+  }
+}
+```
+
+### 4. Use Object Pooling
+
+Reuse Tag objects:
+
+```typescript
+class TagPool {
+  private pool: Tag[] = [];
+  
+  acquire(name: string, attributes: any, children: any[]): Tag {
+    const tag = this.pool.pop() || new Tag();
+    tag.name = name;
+    tag.attributes = attributes;
+    tag.children = children;
+    return tag;
+  }
+  
+  release(tag: Tag): void {
+    // Clear references
+    tag.name = '';
+    tag.attributes = {};
+    tag.children = [];
+    this.pool.push(tag);
+  }
+}
+```
+
+## Async Performance
+
+### Handle Async Transforms Efficiently
+
+Async transforms can slow down rendering:
+
+```typescript
+// Slow: Sequential async operations
+const slow: Schema = {
+  async transform(node: Node, config: Config) {
+    const data1 = await fetchData1();
+    const data2 = await fetchData2();
+    const data3 = await fetchData3();
+    return new Tag('div', {}, [data1, data2, data3]);
+  }
+};
+
+// Fast: Parallel async operations
+const fast: Schema = {
+  async transform(node: Node, config: Config) {
+    const [data1, data2, data3] = await Promise.all([
+      fetchData1(),
+      fetchData2(),
+      fetchData3()
+    ]);
+    return new Tag('div', {}, [data1, data2, data3]);
+  }
+};
+```
+
+### Promise Detection
+
+Markdoc uses `isPromise` to detect async operations:
+
+```typescript
+function isPromise(a: any): a is Promise<any> {
+  return a && typeof a === 'object' && typeof a.then === 'function';
+}
+
+// Transformer handles both sync and async
+node(node: Node, config: Config) {
+  const attributes = this.attributes(node, config);
+  const children = this.children(node, config);
+  
+  if (isPromise(attributes) || isPromise(children)) {
+    return Promise.all([attributes, children]).then(
+      values => new Tag(schema.render, ...values)
+    );
+  }
+  
+  return new Tag(schema.render, attributes, children);
+}
+```
+
+### Minimize Async Boundaries
+
+```typescript
+// Many async boundaries (slow)
+const manyAsync: Schema = {
+  async transform(node: Node, config: Config) {
+    const children = [];
+    for (const child of node.children) {
+      children.push(await child.transform(config)); // Sequential
+    }
+    return new Tag('div', {}, children);
+  }
+};
+
+// Single async boundary (fast)
+const oneAsync: Schema = {
+  async transform(node: Node, config: Config) {
+    const children = await Promise.all(
+      node.children.map(child => child.transform(config)) // Parallel
+    );
+    return new Tag('div', {}, children);
+  }
+};
+```
+
+## Benchmarking
+
+### Measure Performance
+
+```typescript
+function benchmark(name: string, fn: () => any, iterations = 1000) {
+  const start = performance.now();
+  
+  for (let i = 0; i < iterations; i++) {
+    fn();
+  }
+  
+  const end = performance.now();
+  const total = end - start;
+  const average = total / iterations;
+  
+  console.log(`${name}:`);
+  console.log(`  Total: ${total.toFixed(2)}ms`);
+  console.log(`  Average: ${average.toFixed(4)}ms`);
+  console.log(`  Ops/sec: ${(1000 / average).toFixed(0)}`);
+}
+
+// Usage
+benchmark('Parse', () => {
+  const ast = Markdoc.parse(Markdoc.tokenize(markdown));
+});
+
+benchmark('Transform', () => {
+  const renderable = Markdoc.transform(ast, config);
+});
+```
+
+### Profile Memory Usage
+
+```typescript
+function profileMemory(name: string, fn: () => any) {
+  if (global.gc) global.gc(); // Force GC if --expose-gc
+  
+  const before = process.memoryUsage();
+  const result = fn();
+  const after = process.memoryUsage();
+  
+  console.log(`${name} memory:`);
+  console.log(`  Heap used: ${((after.heapUsed - before.heapUsed) / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`  External: ${((after.external - before.external) / 1024 / 1024).toFixed(2)} MB`);
+  
+  return result;
+}
+```
+
+## Best Practices
+
+1. **Cache aggressively**: Parse and transform results are deterministic
+2. **Validate in development only**: Skip validation in production
+3. **Minimize custom transforms**: Use built-in rendering when possible
+4. **Avoid sync I/O**: Never do file I/O in transform functions
+5. **Profile regularly**: Measure before optimizing
+6. **Use parallel processing**: Process multiple documents concurrently
+7. **Clean up memory**: Remove location data in production builds
+8. **Batch async operations**: Use Promise.all for parallel async work
+9. **Pre-compute schemas**: Build schema lookup maps at startup
+10. **Stream when possible**: Process large documents in chunks
+
+## Performance Checklist
+
+- [ ] Parse results are cached
+- [ ] Validation disabled in production
+- [ ] Location tracking disabled in production
+- [ ] Schema lookups are optimized
+- [ ] Custom transforms are minimal
+- [ ] Async operations are batched
+- [ ] Documents processed in parallel
+- [ ] Memory profiling done
+- [ ] No I/O in transform functions
+- [ ] Benchmarks established

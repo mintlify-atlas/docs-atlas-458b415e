@@ -1,0 +1,232 @@
+---
+title: Nodes overview
+description: Understanding Markdoc's node system and how nodes represent the structure of your content
+---
+
+# Nodes
+
+Nodes are the fundamental building blocks of Markdoc's abstract syntax tree (AST). Each node represents an element in your Markdown document, from headings and paragraphs to lists and code blocks.
+
+## What is a node?
+
+A node is a structured representation of a piece of content in your Markdown document. When Markdoc parses your Markdown, it creates a tree of nodes that captures the document's structure and semantics.
+
+Every node has:
+
+- **Type**: The kind of node (e.g., `heading`, `paragraph`, `list`)
+- **Attributes**: Metadata about the node (e.g., `level` for headings, `src` for images)
+- **Children**: Nested nodes that make up the node's content
+- **Errors**: Any validation errors associated with the node
+- **Location**: Optional source location information for error reporting
+
+## Node class
+
+The `Node` class is defined in `src/ast/node.ts` and provides the core functionality:
+
+```ts
+class Node {
+  type: NodeType;
+  attributes: Record<string, any>;
+  children: Node[];
+  slots: Record<string, Node>;
+  errors: ValidationError[];
+  tag?: string;
+  location?: Location;
+
+  constructor(
+    type: NodeType = 'node',
+    attributes: Record<string, any> = {},
+    children: Node[] = [],
+    tag?: string
+  ) {
+    // ...
+  }
+}
+```
+
+## Node types
+
+Markdoc supports the following built-in node types:
+
+### Block nodes
+- `document` - Root node of the document
+- `heading` - Headings (h1-h6)
+- `paragraph` - Text paragraphs
+- `blockquote` - Block quotes
+- `list` - Ordered and unordered lists
+- `item` - List items
+- `fence` - Fenced code blocks
+- `table`, `thead`, `tbody`, `tr`, `th`, `td` - Table elements
+- `hr` - Horizontal rules
+- `tag` - Custom Markdoc tags
+
+### Inline nodes
+- `inline` - Container for inline content
+- `text` - Plain text content
+- `strong` - Bold text
+- `em` - Italic text
+- `s` - Strikethrough text
+- `code` - Inline code
+- `link` - Hyperlinks
+- `image` - Images
+- `hardbreak` - Line breaks (br)
+- `softbreak` - Soft line breaks
+
+### Special nodes
+- `comment` - HTML/Markdoc comments
+- `error` - Parse errors
+- `node` - Generic fallback node
+
+## Node methods
+
+### walk()
+
+Traverse the node tree recursively:
+
+```ts
+const ast = Markdoc.parse(content);
+
+for (const node of ast.walk()) {
+  console.log(node.type);
+}
+```
+
+### resolve(config)
+
+Resolve variables and functions in node attributes:
+
+```ts
+const resolved = node.resolve({
+  variables: { title: 'My Title' }
+});
+```
+
+### transform(config)
+
+Transform the node into a renderable tree:
+
+```ts
+const renderableTree = node.transform({
+  nodes: { /* node schemas */ },
+  tags: { /* tag schemas */ }
+});
+```
+
+### findSchema(config)
+
+Find the schema associated with this node:
+
+```ts
+const schema = node.findSchema(config);
+```
+
+### transformAttributes(config)
+
+Transform node attributes according to schema:
+
+```ts
+const attrs = node.transformAttributes(config);
+```
+
+### transformChildren(config)
+
+Transform child nodes:
+
+```ts
+const children = node.transformChildren(config);
+```
+
+## How nodes work
+
+### 1. Parsing
+
+When you parse Markdown content, Markdoc creates a tree of nodes:
+
+```ts
+const ast = Markdoc.parse('# Hello\n\nThis is a paragraph.');
+
+// Creates this structure:
+// Node(document)
+//   Node(heading, { level: 1 })
+//     Node(inline)
+//       Node(text, { content: 'Hello' })
+//   Node(paragraph)
+//     Node(inline)
+//       Node(text, { content: 'This is a paragraph.' })
+```
+
+### 2. Transformation
+
+Nodes are transformed into renderable output using schemas:
+
+```ts
+const content = Markdoc.transform(ast, {
+  nodes: {
+    heading: {
+      render: 'Heading',
+      attributes: {
+        level: { type: Number, required: true }
+      }
+    }
+  }
+});
+```
+
+### 3. Rendering
+
+The transformed tree can be rendered to your target format:
+
+```tsx
+import { renderers } from '@markdoc/markdoc';
+
+const html = renderers.html(content);
+const react = renderers.react(content, React);
+```
+
+## Global attributes
+
+All nodes support these global attributes:
+
+- `id` - Unique identifier
+- `class` - CSS classes (can be a string or object)
+
+These attributes are automatically processed during transformation:
+
+```markdown
+# My heading {% #custom-id .highlight %}
+```
+
+## Slots
+
+Nodes can have named slots for complex layouts:
+
+```markdown
+{% layout %}
+{% slot "sidebar" %}
+Sidebar content
+{% /slot %}
+
+Main content
+{% /layout %}
+```
+
+Slots are stored in `node.slots` as a map of slot names to nodes.
+
+## Validation
+
+Nodes track validation errors in the `errors` array:
+
+```ts
+const errors = Markdoc.validate(ast, config);
+
+errors.forEach(error => {
+  console.log(error.message);
+  console.log(error.location);
+});
+```
+
+## Next steps
+
+- Learn about [built-in Markdown nodes](/api/nodes/markdown-nodes)
+- Create [custom node schemas](/api/nodes/custom-nodes)
+- Explore [node schemas](/api/schemas)

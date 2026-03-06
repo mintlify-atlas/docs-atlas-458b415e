@@ -1,0 +1,554 @@
+---
+title: React Integration
+description: Integrate Markdoc with React applications and render content with custom components
+---
+
+# React Integration
+
+Markdoc provides first-class React support, allowing you to render Markdown content with custom React components. This guide covers setup, component mapping, and advanced patterns.
+
+## Installation
+
+Install Markdoc and React:
+
+```bash
+npm install @markdoc/markdoc react react-dom
+```
+
+## Basic Usage
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+
+function MarkdocRenderer({ content }) {
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast);
+  const reactNode = Markdoc.renderers.react(transformed, React);
+  
+  return <div>{reactNode}</div>;
+}
+
+export default MarkdocRenderer;
+```
+
+## React Renderer
+
+Markdoc includes two React renderers:
+
+```javascript
+import { renderers } from '@markdoc/markdoc';
+
+// Dynamic renderer (default)
+renderers.react(transformed, React, options);
+
+// Static renderer (for SSR)
+renderers.reactStatic(transformed, React, options);
+```
+
+## Component Mapping
+
+### Object-based Mapping
+
+Map tag names to React components:
+
+```jsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+import { Callout, Button, CodeBlock } from './components';
+
+const components = {
+  Callout,
+  Button,
+  CodeBlock
+};
+
+function MarkdocRenderer({ content }) {
+  const ast = Markdoc.parse(content);
+  const config = {
+    tags: {
+      callout: { render: 'Callout' },
+      button: { render: 'Button' },
+      code: { render: 'CodeBlock' }
+    }
+  };
+  
+  const transformed = Markdoc.transform(ast, config);
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return <div>{reactNode}</div>;
+}
+```
+
+### Function-based Mapping
+
+Dynamically resolve components:
+
+```jsx
+const components = (name) => {
+  // Dynamic imports, lazy loading, etc.
+  switch (name) {
+    case 'Callout': return Callout;
+    case 'Button': return Button;
+    case 'CodeBlock': return CodeBlock;
+    default: return name; // HTML element
+  }
+};
+
+const reactNode = Markdoc.renderers.react(transformed, React, {
+  components
+});
+```
+
+## Creating React Components
+
+<Steps>
+
+### Step 1: Define the component
+
+```jsx
+// components/Callout.jsx
+import React from 'react';
+
+function Callout({ type = 'info', children }) {
+  const styles = {
+    info: 'bg-blue-100 border-blue-500',
+    warning: 'bg-yellow-100 border-yellow-500',
+    error: 'bg-red-100 border-red-500',
+    success: 'bg-green-100 border-green-500'
+  };
+  
+  return (
+    <div className={`border-l-4 p-4 ${styles[type]}`}>
+      {children}
+    </div>
+  );
+}
+
+export default Callout;
+```
+
+### Step 2: Define the Markdoc tag
+
+```javascript
+// markdoc/tags.js
+const callout = {
+  render: 'Callout',
+  attributes: {
+    type: {
+      type: String,
+      default: 'info',
+      matches: ['info', 'warning', 'error', 'success']
+    }
+  }
+};
+
+export default { callout };
+```
+
+### Step 3: Use in Markdown
+
+```markdown
+{% callout type="warning" %}
+Make sure to backup your data before proceeding.
+{% /callout %}
+
+{% callout type="success" %}
+Deployment successful!
+{% /callout %}
+```
+
+</Steps>
+
+## Passing Props
+
+Attributes become props:
+
+```jsx
+// Component
+function Button({ variant, size, disabled, children }) {
+  return (
+    <button
+      className={`btn btn-${variant} btn-${size}`}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Markdoc tag
+const button = {
+  render: 'Button',
+  attributes: {
+    variant: {
+      type: String,
+      default: 'primary',
+      matches: ['primary', 'secondary', 'danger']
+    },
+    size: {
+      type: String,
+      default: 'medium',
+      matches: ['small', 'medium', 'large']
+    },
+    disabled: {
+      type: Boolean,
+      default: false
+    }
+  }
+};
+
+// Usage in Markdown
+{% button variant="danger" size="large" disabled=false %}
+Delete Account
+{% /button %}
+```
+
+## Children
+
+Components receive rendered children:
+
+```jsx
+function Card({ title, children }) {
+  return (
+    <div className="card">
+      <h3>{title}</h3>
+      <div className="card-body">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// In Markdown:
+{% card title="Introduction" %}
+This is the **card content** with _formatting_.
+
+- List item 1
+- List item 2
+{% /card %}
+```
+
+## Slots
+
+Use slots for multiple named content areas:
+
+```jsx
+function Card({ header, footer, children }) {
+  return (
+    <div className="card">
+      {header && <div className="card-header">{header}</div>}
+      <div className="card-body">{children}</div>
+      {footer && <div className="card-footer">{footer}</div>}
+    </div>
+  );
+}
+
+// Markdoc tag
+const card = {
+  render: 'Card',
+  slots: {
+    header: { render: true },
+    footer: { render: true }
+  }
+};
+
+// Usage
+{% card %}
+  {% slot name="header" %}
+    # Card Title
+  {% /slot %}
+  
+  Main card content
+  
+  {% slot name="footer" %}
+    Last updated: 2024
+  {% /slot %}
+{% /card %}
+```
+
+## TypeScript Support
+
+```tsx
+import React from 'react';
+import type { RenderableTreeNodes } from '@markdoc/markdoc';
+
+interface MarkdocRendererProps {
+  content: string;
+  components?: Record<string, React.ComponentType<any>>;
+}
+
+function MarkdocRenderer({ content, components = {} }: MarkdocRendererProps) {
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast, config);
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return <div>{reactNode}</div>;
+}
+
+// Type-safe component
+interface CalloutProps {
+  type?: 'info' | 'warning' | 'error' | 'success';
+  children: React.ReactNode;
+}
+
+function Callout({ type = 'info', children }: CalloutProps) {
+  return <div className={`callout callout-${type}`}>{children}</div>;
+}
+```
+
+## Next.js Integration
+
+### App Router
+
+```tsx
+// app/docs/[slug]/page.tsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import config from '@/markdoc/config';
+import components from '@/components/markdoc';
+
+export default function DocPage({ params }: { params: { slug: string } }) {
+  const content = readFileSync(
+    join(process.cwd(), 'content', `${params.slug}.md`),
+    'utf8'
+  );
+  
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast, config);
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return <article>{reactNode}</article>;
+}
+```
+
+### Pages Router
+
+```tsx
+// pages/docs/[slug].tsx
+import React from 'react';
+import Markdoc from '@markdoc/markdoc';
+import type { GetStaticProps, GetStaticPaths } from 'next';
+
+export const getStaticProps: GetStaticProps = async ({ params }) => {
+  const content = await getDocContent(params?.slug as string);
+  
+  return {
+    props: { content }
+  };
+};
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const slugs = await getDocSlugs();
+  
+  return {
+    paths: slugs.map(slug => ({ params: { slug } })),
+    fallback: false
+  };
+};
+
+function DocPage({ content }: { content: string }) {
+  const ast = Markdoc.parse(content);
+  const transformed = Markdoc.transform(ast, config);
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return <article>{reactNode}</article>;
+}
+
+export default DocPage;
+```
+
+## Advanced Patterns
+
+### Context Integration
+
+```jsx
+import React, { createContext, useContext } from 'react';
+
+const MarkdocContext = createContext({});
+
+function MarkdocProvider({ config, children }) {
+  return (
+    <MarkdocContext.Provider value={config}>
+      {children}
+    </MarkdocContext.Provider>
+  );
+}
+
+function DynamicComponent({ type }) {
+  const config = useContext(MarkdocContext);
+  // Use config for dynamic behavior
+  return <div>Dynamic content based on {type}</div>;
+}
+```
+
+### Frontmatter Access
+
+```jsx
+function MarkdocRenderer({ content }) {
+  const ast = Markdoc.parse(content);
+  const frontmatter = ast.attributes.frontmatter;
+  
+  const config = {
+    variables: {
+      frontmatter
+    }
+  };
+  
+  const transformed = Markdoc.transform(ast, config);
+  const reactNode = Markdoc.renderers.react(transformed, React, {
+    components
+  });
+  
+  return (
+    <article>
+      <header>
+        <h1>{frontmatter?.title}</h1>
+        <p>{frontmatter?.description}</p>
+      </header>
+      {reactNode}
+    </article>
+  );
+}
+```
+
+### Dynamic Imports
+
+```jsx
+import { lazy, Suspense } from 'react';
+
+const CodeBlock = lazy(() => import('./CodeBlock'));
+const Chart = lazy(() => import('./Chart'));
+
+const components = {
+  CodeBlock: (props) => (
+    <Suspense fallback={<div>Loading...</div>}>
+      <CodeBlock {...props} />
+    </Suspense>
+  ),
+  Chart: (props) => (
+    <Suspense fallback={<div>Loading chart...</div>}>
+      <Chart {...props} />
+    </Suspense>
+  )
+};
+```
+
+### Memoization
+
+```jsx
+import { useMemo } from 'react';
+
+function MarkdocRenderer({ content }) {
+  const reactNode = useMemo(() => {
+    const ast = Markdoc.parse(content);
+    const transformed = Markdoc.transform(ast, config);
+    return Markdoc.renderers.react(transformed, React, { components });
+  }, [content]);
+  
+  return <div>{reactNode}</div>;
+}
+```
+
+## Custom Nodes for React
+
+Customize how Markdown elements render:
+
+```javascript
+import { Tag } from '@markdoc/markdoc';
+
+const heading = {
+  render: 'Heading',
+  children: ['inline'],
+  attributes: {
+    level: { type: Number, render: false, required: true }
+  },
+  transform(node, config) {
+    const children = node.transformChildren(config);
+    
+    return new Tag(
+      'Heading',
+      {
+        level: node.attributes.level,
+        id: generateId(children)
+      },
+      children
+    );
+  }
+};
+
+// React component
+function Heading({ level, id, children }) {
+  const Tag = `h${level}`;
+  
+  return (
+    <Tag id={id}>
+      <a href={`#${id}`} className="anchor">
+        {children}
+      </a>
+    </Tag>
+  );
+}
+```
+
+## Best Practices
+
+1. **Memoize transformations**: Use `useMemo` to avoid re-parsing on every render
+2. **Split components**: Keep Markdoc components in a separate directory
+3. **Type your components**: Use TypeScript for better DX
+4. **Handle loading states**: Use Suspense for dynamic imports
+5. **Validate early**: Run validation before transformation
+6. **Cache parsed content**: Cache AST/transformed trees for static content
+
+## Troubleshooting
+
+### Component not rendering
+
+Check:
+1. Component is in the `components` object
+2. Tag's `render` property matches the component name (case-sensitive)
+3. Component is properly exported/imported
+
+```jsx
+// ✓ Correct
+const components = { Callout };
+
+// ✗ Wrong
+const components = { callout: Callout }; // Name mismatch
+```
+
+### Props not received
+
+Ensure attributes have `render: true` (default):
+
+```javascript
+attributes: {
+  title: { type: String } // render: true is default
+}
+```
+
+### Children not rendering
+
+Make sure your component renders `children`:
+
+```jsx
+function Card({ children }) {
+  return <div>{children}</div>; // Don't forget this!
+}
+```
+
+## Next Steps
+
+- Learn about [Custom Tags](/guides/custom-tags) to create more components
+- Explore [Renderers](/guides/renderers) for the rendering API
+- See [Validation](/guides/validation) to validate component usage
